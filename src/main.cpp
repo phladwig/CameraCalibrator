@@ -8,6 +8,7 @@
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+
 using namespace cv;
 #include <stdio.h>
 
@@ -22,14 +23,26 @@ using namespace cv;
 //#define RS_WIDTH 1920
 //#define RS_HEIGHT 1080
 
+// ################################################################################
+// ########################### Variables to set ###################################
+// ################################################################################
 // BETTER CAMERA CALIB
-float squareSizeInMM = 30.0f;
+float squareSizeInMM = 10.0f;
 // Defining the dimensions of checkerboard
-int CHECKERBOARD[2]{ 5,8 };
+int CHECKERBOARD[2]{ 6,9 };
 
-const std::string no_camera_message = "No camera connected, please connect 1 or more";
-const std::string platform_camera_name = "Platform Camera";
 
+bool g_useVideoCapture = false;
+int g_captureDeviceID = 0;
+//std::string g_path = "C:/devel/CameraCalibrator/build/bin/Kinect/*.png";
+std::string g_path = "C:/devel/CameraCalibrator/build/bin/CameraID1-weitwinkelMouthCam/*.jpg";
+
+
+// ################################################################################
+// ################################################################################
+// ################################################################################
+
+int readFileCounter = 0;
 
 ///*
 //Multiple Realsense Klasse
@@ -278,13 +291,21 @@ int main(int argc, char* argv[])
 	cv::Mat cameraMatrix, distCoeffs, R, T;
 	// END BETTER CAMERA CALIB
 
-	VideoCapture cap;
-
-	if (!cap.open(0))
+	std::vector<std::string> fn; // std::string in opencv2.4, but cv::String in 3.0
+	if (!g_useVideoCapture)
 	{
-		std::cout << "Klappt net" << std::endl;
+		cv::glob(g_path, fn, false);
 	}
-	cap.grab();
+
+	VideoCapture cap;
+	if (g_useVideoCapture)
+	{
+		if (!cap.open(g_captureDeviceID))
+		{
+			std::cout << "Klappt net" << std::endl;
+		}
+		cap.grab();
+	}
 
 	Mat inputImage;
 	//cap >> frame;
@@ -325,7 +346,19 @@ int main(int argc, char* argv[])
 	while (waitKey(1))
 	{
 		//cap.retrieve(inputImage);
-		cap >> inputImage;
+		if (g_useVideoCapture)
+		{
+			cap >> inputImage;
+		}
+		else
+		{
+			if (fn.size() > readFileCounter)
+			{
+				std::cout << "imread file path: " << fn.at(readFileCounter) << std::endl;
+				inputImage = cv::imread(fn.at(readFileCounter));
+				readFileCounter++;
+			}
+		}
 		//Holen des n?chsten Frames
 		//rs2::frameset data = vp.pipe.wait_for_frames(); // Wait for next set of frames from the camera
 		////rs2::frame depth = data.get_depth_frame().apply_filter(color_map);

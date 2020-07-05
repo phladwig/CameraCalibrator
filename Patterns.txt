@@ -1,0 +1,3 @@
+Get Patterns from https://calib.io/pages/camera-calibration-pattern-generator
+
+Personal note: D:\_FH D\Phd\Code und Content\Calibration Pattern
