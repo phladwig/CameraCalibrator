@@ -1,5 +1,29 @@
-// License: Apache 2.0. See LICENSE file in root directory.
-// Copyright(c) 2017 Intel Corporation. All Rights Reserved.
+// ################################################################################
+// ###########################    How to use    ###################################
+// ################################################################################
+/*
+Not start up commands necessary.
+When started, it tries to open g_captureDeviceID with g_width and g_height.
+It looks after the given checkerboard pattern CHECKERBOARD with the given square numbers and sizes g_squareSizeInMM.
+Close the shown window "Last seen image" and the app gets the next frame and tries to find the pattern.
+As long as it has not find g_minimumNumberofImagesForCalibration, it will not calibrate.
+As soon as it as g_minimumNumberofImagesForCalibration reached, it tries to calibrate.
+With g_maxIterationForSubPixel = 30 and g_epsilonForSubPixel = 0.01 it takes for
+g_minimumNumberofImagesForCalibration = 50 about 10minutes to calculate in Intel i9. 
+After this, take another photo of the same pattern and you will get the 
+cameraMatrix,
+DistortionParameters
+and Translation and Rotion relative between camera an pattern.
+
+Usually g_mode = 0 should do fine, but check the section "Variables to set" if not below.
+
+Happy calibrating :)
+
+*/
+// ################################################################################
+// ################################################################################
+// ################################################################################
+
 
 //#include <librealsense2/rs.hpp> // Include RealSense Cross Platform API
 #include <opencv2/highgui/highgui_c.h>
@@ -9,7 +33,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-using namespace cv;
+//using namespace cv;
 #include <stdio.h>
 
 //#include <opencv2/aruco.hpp>
@@ -20,198 +44,97 @@ using namespace cv;
 #include <cmath>
 //#include "tinyxml2.h"
 
-//#define RS_WIDTH 1920
-//#define RS_HEIGHT 1080
+#include <videoInput.h>
+videoInput VI;
+unsigned char* viFrame;
+
 
 // ################################################################################
 // ########################### Variables to set ###################################
 // ################################################################################
-// BETTER CAMERA CALIB
-float squareSizeInMM = 10.0f;
-// Defining the dimensions of checkerboard
-int CHECKERBOARD[2]{ 6,9 };
-
-
-bool g_useVideoCapture = false;
-int g_captureDeviceID = 0;
-//std::string g_path = "C:/devel/CameraCalibrator/build/bin/Kinect/*.png";
-std::string g_path = "C:/devel/CameraCalibrator/build/bin/CameraID1-weitwinkelMouthCam/*.jpg";
-
-
-// ################################################################################
-// ################################################################################
-// ################################################################################
-
-int readFileCounter = 0;
-
-///*
-//Multiple Realsense Klasse
-//Container zum Speichern der Realsenses aus multiple Realsense Example
-//*/
-//class device_container
-//{
-//
-//public:
-//	// Helper struct per pipeline
-//	struct view_port
-//	{
-//		std::map<int, rs2::frame> frames_per_stream;
-//		rs2::colorizer colorize_frame;
-//		//texture tex;
-//		rs2::pipeline pipe;
-//		rs2::pipeline_profile profile;
-//	};
-//	void enable_device(rs2::device dev)
-//	{
-//		std::string serial_number(dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER));
-//		std::lock_guard<std::mutex> lock(_mutex);
-//
-//		if (_devices.find(serial_number) != _devices.end())
-//		{
-//			return; //already in
-//		}
-//
-//		// Ignoring platform cameras (webcams, etc..)
-//		if (platform_camera_name == dev.get_info(RS2_CAMERA_INFO_NAME))
-//		{
-//			return;
-//		}
-//
-//
-//		// Create a pipeline from the given device
-//		rs2::pipeline p;
-//		rs2::config c;
-//		c.enable_device(serial_number);
-//		c.enable_stream(RS2_STREAM_COLOR, -1, RS_WIDTH, RS_HEIGHT, rs2_format::RS2_FORMAT_RGB8, 30);
-//		c.disable_stream(RS2_STREAM_DEPTH);
-//		// Start the pipeline with the configuration
-//		rs2::pipeline_profile profile = p.start(c);
-//		// Hold it internally
-//		_devices.emplace(serial_number, view_port{ {},{}, p, profile });
-//
-//	}
-//
-//	void remove_devices(const rs2::event_information& info)
-//	{
-//		std::lock_guard<std::mutex> lock(_mutex);
-//		// Go over the list of devices and check if it was disconnected
-//		auto itr = _devices.begin();
-//		while (itr != _devices.end())
-//		{
-//			if (info.was_removed(itr->second.profile.get_device()))
-//			{
-//				itr = _devices.erase(itr);
-//			}
-//			else
-//			{
-//				++itr;
-//			}
-//		}
-//	}
-//
-//	size_t device_count()
-//	{
-//		std::lock_guard<std::mutex> lock(_mutex);
-//		return _devices.size();
-//	}
-//
-//	int stream_count()
-//	{
-//		std::lock_guard<std::mutex> lock(_mutex);
-//		int count = 0;
-//		for (auto&& sn_to_dev : _devices)
-//		{
-//			for (auto&& stream : sn_to_dev.second.frames_per_stream)
-//			{
-//				if (stream.second)
-//				{
-//					count++;
-//				}
-//			}
-//		}
-//		return count;
-//	}
-//
-//	void poll_frames()
-//	{
-//		std::lock_guard<std::mutex> lock(_mutex);
-//		// Go over all device
-//		for (auto&& view : _devices)
-//		{
-//			// Ask each pipeline if there are new frames available
-//			rs2::frameset frameset;
-//			if (view.second.pipe.poll_for_frames(&frameset))
-//			{
-//				for (int i = 0; i < frameset.size(); i++)
-//				{
-//					rs2::frame new_frame = frameset[i];
-//					int stream_id = new_frame.get_profile().unique_id();
-//					view.second.frames_per_stream[stream_id] = view.second.colorize_frame.process(new_frame); //update view port with the new stream
-//				}
-//			}
-//		}
-//	}
-//	std::map<std::string, view_port> getDevices() {
-//		return _devices;
-//	}
-//private:
-//	std::mutex _mutex;
-//	std::map<std::string, view_port> _devices;
-//};
+/*
+	Width and height of the capture size
+	Does not work for OpenCV
+*/
+int g_width = 640;
+int g_height = 480;
 
 
 /*
-Funktion zur Umrechnung von Rotationsmatrizen in Quaternionen aus Git Repository
-https://gist.github.com/shubh-agrawal/76754b9bfb0f4143819dbd146d15d4c8
+	The index of the device to use (necessary for VideoInput and OpenCV)
+	default is 0
 */
-void getQuaternion(Mat R, double Q[])
-{
-	double trace = R.at<double>(0, 0) + R.at<double>(1, 1) + R.at<double>(2, 2);
-
-	if (trace > 0.0)
-	{
-		double s = sqrt(trace + 1.0);
-		Q[3] = (s * 0.5);
-		s = 0.5 / s;
-		Q[0] = ((R.at<double>(2, 1) - R.at<double>(1, 2)) * s);
-		Q[1] = ((R.at<double>(0, 2) - R.at<double>(2, 0)) * s);
-		Q[2] = ((R.at<double>(1, 0) - R.at<double>(0, 1)) * s);
-	}
-
-	else
-	{
-		int i = R.at<double>(0, 0) < R.at<double>(1, 1) ? (R.at<double>(1, 1) < R.at<double>(2, 2) ? 2 : 1) : (R.at<double>(0, 0) < R.at<double>(2, 2) ? 2 : 0);
-		int j = (i + 1) % 3;
-		int k = (i + 2) % 3;
-
-		double s = sqrt(R.at<double>(i, i) - R.at<double>(j, j) - R.at<double>(k, k) + 1.0);
-		Q[i] = s * 0.5;
-		s = 0.5 / s;
-
-		Q[3] = (R.at<double>(k, j) - R.at<double>(j, k)) * s;
-		Q[j] = (R.at<double>(j, i) + R.at<double>(i, j)) * s;
-		Q[k] = (R.at<double>(k, i) + R.at<double>(i, k)) * s;
-	}
-}
-
-using namespace cv;
+int g_captureDeviceID = 0;
 
 
+/*
+	Set the size of the squares on the chessboard pattern
+*/
+float squareSizeInMM = 10.0f;
 
 
+/*
+	Defining the dimensions of checkerboard (if you count the squares on the chessboard take on less. A pattern with 7 to 10 squares is a 6 to 9
+*/
+int CHECKERBOARD[2]{ 6,9 };
 
 
+/* 
+	Set a capture mode:
+	case 0: // Use videoInputLib
+	case 1: // Use OpenCV's VideoCapture (does not run with every camera - for example not with the AV2GO USB Composite Video Grabber
+	case 2: // Use OpenCV's imread() function in order to load a bunch of images from disk
+	case 3: // Use RealSense Lib (not implemented yet)
+	case 4: // Use Azure Kinect Sensor SDK (not implemented yet)
+*/
+int g_mode = 0;
 
 
+/* 
+	Set a path to a bunch of files on disk -> used by OpenCV imgread()
+	default is 0
+*/
+std::string g_path = "C:/devel/CameraCalibrator/build/bin/CameraID1-weitwinkelMouthCam/*.jpg";
 
 
-
-
-//Notes: Je nach Auflösung sieht es so aus als wäre unter critera das Epsilon wichtig
-
+/*
+	regards OpenCV:
+	Criteria for termination of the iterative process of corner refinement in feature detection.
+	That is, the process of corner position refinement stops either after g_maxIterationForSubPixel
+	iterations or when the corner position moves by less than g_epsilonForSubPixel on some iteration.
+	Have a look at https://docs.opencv.org/2.4/modules/imgproc/doc/feature_detection.html#cornersubpix
+	Default is 30 and 0.01
+*/
+int g_maxIterationForSubPixel = 30;
+int g_epsilonForSubPixel = 0.01;
 
 
 
+
+
+int g_minimumNumberofImagesForCalibration = 50;
+
+
+
+// ################################################################################
+// ################################################################################
+// ################################################################################
+
+
+
+// ################################################################################
+// ###########################    Dev notes     ###################################
+// ################################################################################
+/*
+	Experimetal State
+	For RealSense implementation in the future, look at the file 
+	"oldRealSenseCalibratorFromStudentProject.txt"
+
+
+*/
+// ################################################################################
+// ################################################################################
+// ################################################################################
 
 
 /*
@@ -219,7 +142,37 @@ Main Funktion
 */
 int main(int argc, char* argv[])
 {
-	// BETTER CAMERA CALIB
+	std::vector<std::string> fn;
+	cv::VideoCapture cap;
+	cv::Mat inputImage;
+	switch (g_mode) {
+	case 0: // Use videoInputLib
+		VI.setUseCallback(true);
+		VI.setupDevice(g_captureDeviceID, g_width, g_height, VI_COMPOSITE);
+		viFrame = new unsigned char[VI.getSize(g_captureDeviceID)];
+		inputImage = cv::Mat(cv::Size(g_width, g_height), CV_8UC3, (void*)viFrame, cv::Mat::AUTO_STEP);
+		break;
+	case 1: // Use OpenCV's VideoCapture (does not run with every camera - for example not with the AV2GO USB Composite Video Grabber
+		if (!cap.open(g_captureDeviceID))
+		{
+			std::cout << "Can't open OpenCV CaptureDevice" << std::endl;
+		}
+		cap.grab();
+		cap.set(cv::CAP_PROP_FRAME_WIDTH, g_width); //Does not work?
+		cap.set(cv::CAP_PROP_FRAME_HEIGHT, g_height);
+		break;
+	case 2: // Use OpenCV's imread() function in order to load a bunch of images from disk
+		cv::glob(g_path, fn, false);
+		break;
+	case 3: // Use RealSense Lib (not implemented yet)
+		break;
+	case 4: // Use Azure Kinect Sensor SDK (not implemented yet)
+		break;
+	default:
+		break;
+	}
+
+	//Set up of calibration 
 	// Creating vector to store vectors of 3D points for each checkerboard image
 	std::vector<std::vector<cv::Point3f> > objpoints;
 
@@ -234,124 +187,29 @@ int main(int argc, char* argv[])
 			objp.push_back(cv::Point3f(j * squareSizeInMM, i * squareSizeInMM, 0.0f));
 	}
 
-	/*Erstellung des MarkerBoards*/
-	std::vector<int> ids = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 };
-	std::vector<std::vector<Point3f>> board_corners;
-	board_corners.push_back({ Point3f(0.15f, -0.107f, 0.107f), Point3f(0.15f, -0.019f, 0.107f), Point3f(0.15f, -0.019f, 0.019f), Point3f(0.15f, -0.107f, 0.019f) });
-	board_corners.push_back({ Point3f(0.15f, 0.019f, 0.107f), Point3f(0.15f, 0.107f, 0.107f), Point3f(0.15f, 0.107f, 0.019f), Point3f(0.15f, 0.019f, 0.019f) });
-	board_corners.push_back({ Point3f(0.15f, -0.107f, -0.019f), Point3f(0.15f, -0.019f, -0.019f), Point3f(0.15f, -0.019f, -0.107f), Point3f(0.15f, -0.107f, -0.107f) });
-	board_corners.push_back({ Point3f(0.15f, 0.019f, -0.019f), Point3f(0.15f, 0.107f, -0.019f), Point3f(0.15f, 0.107f, -0.107f), Point3f(0.15f, 0.019f, -0.107f) });
-
-	board_corners.push_back({ Point3f(-0.107f, 0.107f, 0.15f), Point3f(-0.019f, 0.107f, 0.15f), Point3f(-0.019f, 0.019f, 0.15f), Point3f(-0.107f, 0.019f, 0.15f) });
-	board_corners.push_back({ Point3f(0.019f, 0.107f, 0.15f), Point3f(0.107f, 0.107f, 0.15f), Point3f(0.107f, 0.019f, 0.15f), Point3f(0.019f, 0.019f, 0.15f) });
-	board_corners.push_back({ Point3f(-0.107f, -0.019f, 0.15f), Point3f(-0.019f, -0.019f, 0.15f), Point3f(-0.019f, -0.107f, 0.15f), Point3f(-0.107f, -0.107f, 0.15f) });
-	board_corners.push_back({ Point3f(0.019f, -0.019f, 0.15f), Point3f(0.107f, -0.019f, 0.15f), Point3f(0.107f, -0.107f, 0.15f), Point3f(0.019f, -0.107f, 0.15f) });
-
-	board_corners.push_back({ Point3f(0.107f, 0.15f, 0.107f), Point3f(0.019f, 0.15f, 0.107f), Point3f(0.019f, 0.15f, 0.019f), Point3f(0.107f, 0.15f, 0.019f) });
-	board_corners.push_back({ Point3f(-0.019f, 0.15f, 0.107f), Point3f(-0.107f, 0.15f, 0.107f), Point3f(-0.107f, 0.15f, 0.019f), Point3f(-0.019f, 0.15f, 0.019f) });
-	board_corners.push_back({ Point3f(0.107f, 0.15f, -0.019f), Point3f(0.019f, 0.15f, -0.019f), Point3f(0.019f, 0.15f, -0.107f), Point3f(0.107f, 0.15f, -0.107f) });
-	board_corners.push_back({ Point3f(-0.019f, 0.15f, -0.019f), Point3f(-0.107f, 0.15f, -0.019f), Point3f(-0.107f, 0.15f, -0.107f), Point3f(-0.019f, 0.15f, -0.107f) });
-
-	board_corners.push_back({ Point3f(-0.107f, -0.15f, 0.107f), Point3f(-0.019f, -0.15f, 0.107f), Point3f(-0.019f, -0.15f, 0.019f), Point3f(-0.107f, -0.15f, 0.019f) });
-	board_corners.push_back({ Point3f(0.019f, -0.15f, 0.107f), Point3f(0.107f, -0.15f, 0.107f), Point3f(0.107f, -0.15f, 0.019f), Point3f(0.019f, -0.15f, 0.019f) });
-	board_corners.push_back({ Point3f(-0.107f, -0.15f, -0.019f), Point3f(-0.019f, -0.15f, -0.019f), Point3f(-0.019f, -0.15f, -0.107f), Point3f(-0.107f, -0.15f, -0.107f) });
-	board_corners.push_back({ Point3f(0.019f, -0.15f, -0.019f), Point3f(0.107f, -0.15f, -0.019f), Point3f(0.107f, -0.15f, -0.107f), Point3f(0.019f, -0.15f, -0.107f) });
-
-	board_corners.push_back({ Point3f(0.107f, -0.107f, -0.15f), Point3f(0.019f, -0.107f, -0.15f), Point3f(0.019f, -0.019f, -0.15f), Point3f(0.107f, -0.019f, -0.15f) });
-	board_corners.push_back({ Point3f(-0.019f, -0.107f, -0.15f), Point3f(-0.107f, -0.107f, -0.15f), Point3f(-0.107f, -0.019f, -0.15f), Point3f(-0.019f, -0.019f, -0.15f) });
-	board_corners.push_back({ Point3f(0.107f, 0.019f, -0.15f), Point3f(0.019f, 0.019f, -0.15f), Point3f(0.019f, 0.107f, -0.15f), Point3f(0.107f, 0.107f, -0.15f) });
-	board_corners.push_back({ Point3f(-0.019f, 0.019f, -0.15f), Point3f(-0.107f, 0.019f, -0.15f), Point3f(-0.107f, 0.107f, -0.15f), Point3f(-0.019f, 0.107f, -0.15f) });
-
-	board_corners.push_back({ Point3f(-0.15f, 0.107f, 0.107f), Point3f(-0.15f, 0.019f, 0.107f), Point3f(-0.15f, 0.019f, 0.019f), Point3f(-0.15f, 0.107f, 0.019f) });
-	board_corners.push_back({ Point3f(-0.15f, -0.019f, 0.107f), Point3f(-0.15f, -0.107f, 0.107f), Point3f(-0.15f, -0.107f, 0.019f), Point3f(-0.15f, -0.019f, 0.019f) });
-	board_corners.push_back({ Point3f(-0.15f, 0.107f, -0.019f), Point3f(-0.15f, 0.019f, -0.019f), Point3f(-0.15f, 0.019f, -0.107f), Point3f(-0.15f, 0.107f, -0.107f) });
-	board_corners.push_back({ Point3f(-0.15f, -0.019f, -0.019f), Point3f(-0.15f, -0.107f, -0.019f), Point3f(-0.15f, -0.107f, -0.107f),  Point3f(-0.15f, -0.019f, -0.107f) });
-
-	//cv::Ptr<cv::aruco::Board> board = cv::aruco::Board::create(board_corners, cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_50), ids);
-
-	/*
-	Initiale Erstellung des XML Document-Objekts
-	*/
-	//using namespace tinyxml2;
-	//XMLDocument doc;
-	//XMLDeclaration* dec = doc.NewDeclaration();
-	//doc.InsertFirstChild(dec);
-	//XMLElement* camList = doc.NewElement("CameraList");
-
-
-	/*
-	Initialisierung des multiple Realsense Containers
-	*/
-	/*auto m_realSenseDeviceContainer = new device_container();
-	auto m_context = new rs2::context();*/
-
-
-	// BETTER CAMERA CALIB
 	int seenCheckerImages = 0;
 	cv::Mat cameraMatrix, distCoeffs, R, T;
-	// END BETTER CAMERA CALIB
 
-	std::vector<std::string> fn; // std::string in opencv2.4, but cv::String in 3.0
-	if (!g_useVideoCapture)
+
+	//Main loop
+	while (cv::waitKey(1))
 	{
-		cv::glob(g_path, fn, false);
-	}
-
-	VideoCapture cap;
-	if (g_useVideoCapture)
-	{
-		if (!cap.open(g_captureDeviceID))
-		{
-			std::cout << "Klappt net" << std::endl;
-		}
-		cap.grab();
-	}
-
-	Mat inputImage;
-	//cap >> frame;
-
-	//cap.read(frame);
-	//cv::imwrite("___Test.jpg", image);
-	//imshow("this is you, smile! :)", inputImage);
-
-
-	//// Initial population of the device list
-	//for (auto&& dev : m_context->query_devices()) // Query the list of connected RealSense devices
-	//{
-	//	m_realSenseDeviceContainer->enable_device(dev);
-	//}
-
-	/*Schleife ueber alle Realsenses*/
-	/*for (auto dev : m_realSenseDeviceContainer->getDevices())
-	{*/
-	////Auslesen der Metadaten der Kamera
-	//std::string serialnumber = dev.first;
-	//device_container::view_port vp = dev.second;
-	//auto color_stream = vp.profile.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>();
-	//auto resolution = std::make_pair(color_stream.width(), color_stream.height());
-	//auto i = color_stream.get_intrinsics();
-	//rs2_distortion model = i.model;
-	//cv::Mat distCoeffs = (cv::Mat_<float>(1, 5) << 0, 0, 0, 0, 0);
-	//cv::Mat cameraMatrix = (cv::Mat_<float>(3, 3) << i.fx, 0, i.ppx, 0, i.fy, i.ppy, 0, 0, 1);
-
-	////Fenstername
-	//auto window_name = "Camera" + serialnumber;
-
-	////Erstellen des Fensters
-	//namedWindow(window_name, WINDOW_AUTOSIZE);
-
-	//bool found_cube = false;
-	//Analysieren des Realsense Bildes bis der W?rfel gefunden werden konnte, oder ein Tastendruck den Vorgang abbricht 
-
-	while (waitKey(1))
-	{
-		//cap.retrieve(inputImage);
-		if (g_useVideoCapture)
-		{
+		switch (g_mode) {
+		case 0: // Use videoInputLib
+			if (VI.isFrameNew(g_captureDeviceID))
+			{
+				//we get the pixels by passing in out buffer which gets filled
+				VI.getPixels(g_captureDeviceID, viFrame, true);
+			}
+			cv::cvtColor(inputImage, inputImage, cv::COLOR_RGB2BGR);
+			cv::flip(inputImage, inputImage, 0);
+			break;
+		case 1: // Use OpenCV's VideoCapture (does not run with every camera - for example not with the AV2GO USB Composite Video Grabber
 			cap >> inputImage;
-		}
-		else
+			break;
+		case 2:// Use OpenCV's imread() function in order to load a bunch of images from disk
 		{
+			int readFileCounter = 0;
 			if (fn.size() > readFileCounter)
 			{
 				std::cout << "imread file path: " << fn.at(readFileCounter) << std::endl;
@@ -359,55 +217,32 @@ int main(int argc, char* argv[])
 				readFileCounter++;
 			}
 		}
-		//Holen des n?chsten Frames
-		//rs2::frameset data = vp.pipe.wait_for_frames(); // Wait for next set of frames from the camera
-		////rs2::frame depth = data.get_depth_frame().apply_filter(color_map);
-		//rs2::frame color = data.get_color_frame();
+			break;
+		case 3: // Use RealSense Lib (not implemented yet)
+			break;
+		case 4: // Use Azure Kinect Sensor SDK (not implemented yet)
+			break;
+		default:
+			break;
+		}
 
-		//// Query frame size (width and height)
-		////const int w = depth.as<rs2::video_frame>().get_width();
-		////const int h = depth.as<rs2::video_frame>().get_height();
-
-		//const int w = color.as<rs2::video_frame>().get_width();
-		//const int h = color.as<rs2::video_frame>().get_height();
-
-		//// Create OpenCV matrix of size (w,h) from the colorized depth data
-		//Mat image(Size(w, h), CV_8UC3, (void*)color.get_data(), Mat::AUTO_STEP);
-
-		//Aruco Marker detection
-		//Mat inputImage;
-		//image.copyTo(inputImage);
+		
 		std::vector<int> markerIds;
 		std::vector<std::vector<cv::Point2f>> markerCorners, rejectedCandidates;
-		//cv::Ptr<cv::aruco::DetectorParameters> parameters = cv::aruco::DetectorParameters::create();
-		//cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
-		//cv::aruco::detectMarkers(inputImage, dictionary, markerCorners, markerIds, parameters, rejectedCandidates);
-		//cv::aruco::drawDetectedMarkers(inputImage, markerCorners, markerIds);
 
-
-
-
-
-		// BETTER CAMERA CALIB
-		// Extracting path of individual image stored in a given directory
-		//std::vector<cv::String> images;
-		// Path of the folder containing checkerboard images
-		//std::string path = "./images/*.jpg";
-
-		//cv::glob(path, images);
-		// vector to store the pixel coordinates of detected checker board corners 
 		std::vector<cv::Point2f> corner_pts;
 		bool success;
 
-
 		cv::Mat gray;
-		//frame = cv::imread(images[i]);
 		cv::cvtColor(inputImage, gray, cv::COLOR_RGB2GRAY);
 
 		// Finding checker board corners
 		// If desired number of corners are found in the image then success = true  
-		success = cv::findChessboardCorners(gray, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts, CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE | CALIB_CB_FILTER_QUADS);
+		success = cv::findChessboardCorners(gray, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts, cv::CALIB_CB_ADAPTIVE_THRESH | 
+																											cv::CALIB_CB_NORMALIZE_IMAGE | 
+																											cv::CALIB_CB_FILTER_QUADS);
 		//success = cv::findChessboardCorners(gray, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts);
+		
 		/*
 		 * If desired number of corner are detected,
 		 * we refine the pixel coordinates and display
@@ -415,8 +250,8 @@ int main(int argc, char* argv[])
 		*/
 		if (success)
 		{
-			std::cout << "______________________________________________________________" << std::endl;
-			cv::TermCriteria criteria(CV_TERMCRIT_EPS | CV_TERMCRIT_ITER, 30, 0.01);
+			std::cout << "Saw chessboard pattern - processing" << std::endl;
+			cv::TermCriteria criteria(CV_TERMCRIT_EPS | CV_TERMCRIT_ITER, g_maxIterationForSubPixel, g_epsilonForSubPixel);
 
 			// refining pixel coordinates for given 2d points.
 			cv::cornerSubPix(gray, corner_pts, cv::Size(11, 11), cv::Size(-1, -1), criteria);
@@ -430,22 +265,20 @@ int main(int argc, char* argv[])
 			seenCheckerImages++;
 		}
 
-		//cv::imshow("Image", frame);
-		//cv::waitKey(0);
-
 
 		// Update the window with new data
-		imshow("Ufta", inputImage);
+		imshow("Last seen image", inputImage);
 		std::cout << "seenCheckerImages : " << seenCheckerImages << std::endl;
 
-		if (seenCheckerImages == 50)
+		//Calibration
+		if (seenCheckerImages == g_minimumNumberofImagesForCalibration)
 		{
 			std::cout << "Vor calibrateCamera()" << std::endl;
 			cv::calibrateCamera(objpoints, imgpoints, cv::Size(gray.rows, gray.cols), cameraMatrix, distCoeffs, R, T);
 			std::cout << "Nach calibrateCamera()" << std::endl;
 		}
 
-		if (seenCheckerImages > 50)
+		if (seenCheckerImages > g_minimumNumberofImagesForCalibration)
 		{
 			std::cout << "Vor solvePnP()" << std::endl;
 			int imagesTaken = objpoints.size();
@@ -457,12 +290,13 @@ int main(int argc, char* argv[])
 			std::cout << "Raus_______________________________" << std::endl;
 			//objpoints.clear();
 			//imgpoints.clear();
+			//Mat temp = inputImage.clone();
+			cv::Mat temp = inputImage.clone();
+			undistort(temp, inputImage, cameraMatrix, distCoeffs);
+			imshow("Undistored", inputImage);
 		}
-		waitKeyEx(0);
+		cv::waitKeyEx(0);
 	}
-	//}
-	//doc.InsertEndChild(camList);
-	//doc.SaveFile("CameraParameters.xml");
-	waitKey(0);
+	cv::waitKey(0);
 	return EXIT_SUCCESS;
 }

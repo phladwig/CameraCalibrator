@@ -21,6 +21,21 @@ set(CMAKE_DEBUG_POSTFIX "d")
 # CMake Modules
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
+
+####################################################################################################
+######################################## DOWNLOAD OF DEPS ##########################################
+####################################################################################################
+# Only for developers who change the online dep files in this document:
+# TODO for new downloads and updates deps:
+# Check, if all files up to date (e.g. versions files such as /bin/bin-ver-100x or config.xml!)
+# Zip it
+# Upload it to the server
+# Create Hash: Power shell: Get-FileHash XYZ.zip -Algorithm SHA256 + Short cut in Visual Studio to lower case: CTRL +U
+# Add new Hash (in lowercase) to this document
+# Check if the URL is still ok (Usually it will be incremented)
+# Check if the CHECK_IF_DEPS_EXIST path and file is correct
+# Commit and push changes
+# At the End: Checkout and test (Best case: On a fresh windows 10 installation)
 # Function for extraction of the name of the dependency in order to create appropriate directories
 function(getsTheDepsNameFromURL "${URL}")
 	string(FIND "${URL}" / FILENAME_STRING_POS REVERSE) # searches for the last / and returns the position in the string
@@ -45,6 +60,14 @@ set(CHECK_IF_DEPS_EXIST "${CURRENT_DEPS_PATH}/include/opencv2/core.hpp")
 FIND_PACKAGE( OpenCVCameraCalibrator REQUIRED)
 file(COPY ${CURRENT_DEPS_PATH}/x64/vc15/bin/opencv_world420.dll DESTINATION ${CMAKE_BINARY_DIR}/bin)
 file(COPY ${CURRENT_DEPS_PATH}/x64/vc15/bin/opencv_world420d.dll DESTINATION ${CMAKE_BINARY_DIR}/bin)
+
+#VideoInput Lib
+set(EXPECTED_SHA256 18ac560fe2126586db57eab6b27a03a421b55c02b39033328ea1804536af40e8 )
+set(CURRENT_DEPS_PATH ${CMAKE_BINARY_DIR}/../deps/videoInput/)
+set(URL https://claymore.mirevi.com/CameraCalibrator/videoInput.zip)
+getsTheDepsNameFromURL("${URL}")
+set(CHECK_IF_DEPS_EXIST "${CURRENT_DEPS_PATH}/include/videoInput.h")
+FIND_PACKAGE( VideoInput REQUIRED)
 
 # Add subdir with additional CMakeLists.txt and files
 add_subdirectory("${CMAKE_SOURCE_DIR}/src")

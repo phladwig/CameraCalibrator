@@ -1,0 +1,442 @@
+//Code from imshow example of the OpenCV examples of the libRealSense by Intel
+
+
+
+
+
+// License: Apache 2.0. See LICENSE file in root directory.
+// Copyright(c) 2017 Intel Corporation. All Rights Reserved.
+
+#include <librealsense2/rs.hpp> // Include RealSense Cross Platform API
+#include <opencv2/highgui/highgui_c.h>
+#include <opencv2/opencv.hpp>   // Include OpenCV API
+// BETTER CAMERA CALIB
+#include <opencv2/calib3d/calib3d.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
+using namespace cv;
+#include <stdio.h>
+
+//#include <opencv2/aruco.hpp>
+#include <string>
+#include <map>
+#include <algorithm>
+#include <mutex>                    // std::mutex, std::lock_guard
+#include <cmath>
+//#include "tinyxml2.h"
+
+#define RS_WIDTH 1920
+#define RS_HEIGHT 1080
+
+// BETTER CAMERA CALIB
+float squareSizeInMM = 30.0f;
+// Defining the dimensions of checkerboard
+int CHECKERBOARD[2]{ 5,8 };
+
+const std::string no_camera_message = "No camera connected, please connect 1 or more";
+const std::string platform_camera_name = "Platform Camera";
+
+
+/*
+Multiple Realsense Klasse
+Container zum Speichern der Realsenses aus multiple Realsense Example
+*/
+class device_container
+{
+
+public:
+	// Helper struct per pipeline
+	struct view_port
+	{
+		std::map<int, rs2::frame> frames_per_stream;
+		rs2::colorizer colorize_frame;
+		//texture tex;
+		rs2::pipeline pipe;
+		rs2::pipeline_profile profile;
+	};
+	void enable_device(rs2::device dev)
+	{
+		std::string serial_number(dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER));
+		std::lock_guard<std::mutex> lock(_mutex);
+
+		if (_devices.find(serial_number) != _devices.end())
+		{
+			return; //already in
+		}
+
+		// Ignoring platform cameras (webcams, etc..)
+		if (platform_camera_name == dev.get_info(RS2_CAMERA_INFO_NAME))
+		{
+			return;
+		}
+
+
+		// Create a pipeline from the given device
+		rs2::pipeline p;
+		rs2::config c;
+		c.enable_device(serial_number);
+		c.enable_stream(RS2_STREAM_COLOR, -1, RS_WIDTH, RS_HEIGHT, rs2_format::RS2_FORMAT_RGB8, 30);
+		c.disable_stream(RS2_STREAM_DEPTH);
+		// Start the pipeline with the configuration
+		rs2::pipeline_profile profile = p.start(c);
+		// Hold it internally
+		_devices.emplace(serial_number, view_port{ {},{}, p, profile });
+
+	}
+
+	void remove_devices(const rs2::event_information& info)
+	{
+		std::lock_guard<std::mutex> lock(_mutex);
+		// Go over the list of devices and check if it was disconnected
+		auto itr = _devices.begin();
+		while (itr != _devices.end())
+		{
+			if (info.was_removed(itr->second.profile.get_device()))
+			{
+				itr = _devices.erase(itr);
+			}
+			else
+			{
+				++itr;
+			}
+		}
+	}
+
+	size_t device_count()
+	{
+		std::lock_guard<std::mutex> lock(_mutex);
+		return _devices.size();
+	}
+
+	int stream_count()
+	{
+		std::lock_guard<std::mutex> lock(_mutex);
+		int count = 0;
+		for (auto&& sn_to_dev : _devices)
+		{
+			for (auto&& stream : sn_to_dev.second.frames_per_stream)
+			{
+				if (stream.second)
+				{
+					count++;
+				}
+			}
+		}
+		return count;
+	}
+
+	void poll_frames()
+	{
+		std::lock_guard<std::mutex> lock(_mutex);
+		// Go over all device
+		for (auto&& view : _devices)
+		{
+			// Ask each pipeline if there are new frames available
+			rs2::frameset frameset;
+			if (view.second.pipe.poll_for_frames(&frameset))
+			{
+				for (int i = 0; i < frameset.size(); i++)
+				{
+					rs2::frame new_frame = frameset[i];
+					int stream_id = new_frame.get_profile().unique_id();
+					view.second.frames_per_stream[stream_id] = view.second.colorize_frame.process(new_frame); //update view port with the new stream
+				}
+			}
+		}
+	}
+	std::map<std::string, view_port> getDevices() {
+		return _devices;
+	}
+private:
+	std::mutex _mutex;
+	std::map<std::string, view_port> _devices;
+};
+
+
+/*
+Funktion zur Umrechnung von Rotationsmatrizen in Quaternionen aus Git Repository
+https://gist.github.com/shubh-agrawal/76754b9bfb0f4143819dbd146d15d4c8
+*/
+void getQuaternion(Mat R, double Q[])
+{
+	double trace = R.at<double>(0, 0) + R.at<double>(1, 1) + R.at<double>(2, 2);
+
+	if (trace > 0.0)
+	{
+		double s = sqrt(trace + 1.0);
+		Q[3] = (s * 0.5);
+		s = 0.5 / s;
+		Q[0] = ((R.at<double>(2, 1) - R.at<double>(1, 2)) * s);
+		Q[1] = ((R.at<double>(0, 2) - R.at<double>(2, 0)) * s);
+		Q[2] = ((R.at<double>(1, 0) - R.at<double>(0, 1)) * s);
+	}
+
+	else
+	{
+		int i = R.at<double>(0, 0) < R.at<double>(1, 1) ? (R.at<double>(1, 1) < R.at<double>(2, 2) ? 2 : 1) : (R.at<double>(0, 0) < R.at<double>(2, 2) ? 2 : 0);
+		int j = (i + 1) % 3;
+		int k = (i + 2) % 3;
+
+		double s = sqrt(R.at<double>(i, i) - R.at<double>(j, j) - R.at<double>(k, k) + 1.0);
+		Q[i] = s * 0.5;
+		s = 0.5 / s;
+
+		Q[3] = (R.at<double>(k, j) - R.at<double>(j, k)) * s;
+		Q[j] = (R.at<double>(j, i) + R.at<double>(i, j)) * s;
+		Q[k] = (R.at<double>(k, i) + R.at<double>(i, k)) * s;
+	}
+}
+
+
+/*
+Main Funktion
+*/
+int main(int argc, char* argv[]) try
+{
+	// BETTER CAMERA CALIB
+	// Creating vector to store vectors of 3D points for each checkerboard image
+	std::vector<std::vector<cv::Point3f> > objpoints;
+
+	// Creating vector to store vectors of 2D points for each checkerboard image
+	std::vector<std::vector<cv::Point2f> > imgpoints;
+
+	// Defining the world coordinates for 3D points
+	std::vector<cv::Point3f> objp;
+	for (int i{ 0 }; i < CHECKERBOARD[1]; i++)
+	{
+		for (int j{ 0 }; j < CHECKERBOARD[0]; j++)
+			objp.push_back(cv::Point3f(j * squareSizeInMM, i * squareSizeInMM, 0.0f));
+	}
+
+
+
+
+
+	using namespace cv;
+	/*Erstellung des MarkerBoards*/
+	std::vector<int> ids = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 };
+	std::vector<std::vector<Point3f>> board_corners;
+	board_corners.push_back({ Point3f(0.15f, -0.107f, 0.107f), Point3f(0.15f, -0.019f, 0.107f), Point3f(0.15f, -0.019f, 0.019f), Point3f(0.15f, -0.107f, 0.019f) });
+	board_corners.push_back({ Point3f(0.15f, 0.019f, 0.107f), Point3f(0.15f, 0.107f, 0.107f), Point3f(0.15f, 0.107f, 0.019f), Point3f(0.15f, 0.019f, 0.019f) });
+	board_corners.push_back({ Point3f(0.15f, -0.107f, -0.019f), Point3f(0.15f, -0.019f, -0.019f), Point3f(0.15f, -0.019f, -0.107f), Point3f(0.15f, -0.107f, -0.107f) });
+	board_corners.push_back({ Point3f(0.15f, 0.019f, -0.019f), Point3f(0.15f, 0.107f, -0.019f), Point3f(0.15f, 0.107f, -0.107f), Point3f(0.15f, 0.019f, -0.107f) });
+
+	board_corners.push_back({ Point3f(-0.107f, 0.107f, 0.15f), Point3f(-0.019f, 0.107f, 0.15f), Point3f(-0.019f, 0.019f, 0.15f), Point3f(-0.107f, 0.019f, 0.15f) });
+	board_corners.push_back({ Point3f(0.019f, 0.107f, 0.15f), Point3f(0.107f, 0.107f, 0.15f), Point3f(0.107f, 0.019f, 0.15f), Point3f(0.019f, 0.019f, 0.15f) });
+	board_corners.push_back({ Point3f(-0.107f, -0.019f, 0.15f), Point3f(-0.019f, -0.019f, 0.15f), Point3f(-0.019f, -0.107f, 0.15f), Point3f(-0.107f, -0.107f, 0.15f) });
+	board_corners.push_back({ Point3f(0.019f, -0.019f, 0.15f), Point3f(0.107f, -0.019f, 0.15f), Point3f(0.107f, -0.107f, 0.15f), Point3f(0.019f, -0.107f, 0.15f) });
+
+	board_corners.push_back({ Point3f(0.107f, 0.15f, 0.107f), Point3f(0.019f, 0.15f, 0.107f), Point3f(0.019f, 0.15f, 0.019f), Point3f(0.107f, 0.15f, 0.019f) });
+	board_corners.push_back({ Point3f(-0.019f, 0.15f, 0.107f), Point3f(-0.107f, 0.15f, 0.107f), Point3f(-0.107f, 0.15f, 0.019f), Point3f(-0.019f, 0.15f, 0.019f) });
+	board_corners.push_back({ Point3f(0.107f, 0.15f, -0.019f), Point3f(0.019f, 0.15f, -0.019f), Point3f(0.019f, 0.15f, -0.107f), Point3f(0.107f, 0.15f, -0.107f) });
+	board_corners.push_back({ Point3f(-0.019f, 0.15f, -0.019f), Point3f(-0.107f, 0.15f, -0.019f), Point3f(-0.107f, 0.15f, -0.107f), Point3f(-0.019f, 0.15f, -0.107f) });
+
+	board_corners.push_back({ Point3f(-0.107f, -0.15f, 0.107f), Point3f(-0.019f, -0.15f, 0.107f), Point3f(-0.019f, -0.15f, 0.019f), Point3f(-0.107f, -0.15f, 0.019f) });
+	board_corners.push_back({ Point3f(0.019f, -0.15f, 0.107f), Point3f(0.107f, -0.15f, 0.107f), Point3f(0.107f, -0.15f, 0.019f), Point3f(0.019f, -0.15f, 0.019f) });
+	board_corners.push_back({ Point3f(-0.107f, -0.15f, -0.019f), Point3f(-0.019f, -0.15f, -0.019f), Point3f(-0.019f, -0.15f, -0.107f), Point3f(-0.107f, -0.15f, -0.107f) });
+	board_corners.push_back({ Point3f(0.019f, -0.15f, -0.019f), Point3f(0.107f, -0.15f, -0.019f), Point3f(0.107f, -0.15f, -0.107f), Point3f(0.019f, -0.15f, -0.107f) });
+
+	board_corners.push_back({ Point3f(0.107f, -0.107f, -0.15f), Point3f(0.019f, -0.107f, -0.15f), Point3f(0.019f, -0.019f, -0.15f), Point3f(0.107f, -0.019f, -0.15f) });
+	board_corners.push_back({ Point3f(-0.019f, -0.107f, -0.15f), Point3f(-0.107f, -0.107f, -0.15f), Point3f(-0.107f, -0.019f, -0.15f), Point3f(-0.019f, -0.019f, -0.15f) });
+	board_corners.push_back({ Point3f(0.107f, 0.019f, -0.15f), Point3f(0.019f, 0.019f, -0.15f), Point3f(0.019f, 0.107f, -0.15f), Point3f(0.107f, 0.107f, -0.15f) });
+	board_corners.push_back({ Point3f(-0.019f, 0.019f, -0.15f), Point3f(-0.107f, 0.019f, -0.15f), Point3f(-0.107f, 0.107f, -0.15f), Point3f(-0.019f, 0.107f, -0.15f) });
+
+	board_corners.push_back({ Point3f(-0.15f, 0.107f, 0.107f), Point3f(-0.15f, 0.019f, 0.107f), Point3f(-0.15f, 0.019f, 0.019f), Point3f(-0.15f, 0.107f, 0.019f) });
+	board_corners.push_back({ Point3f(-0.15f, -0.019f, 0.107f), Point3f(-0.15f, -0.107f, 0.107f), Point3f(-0.15f, -0.107f, 0.019f), Point3f(-0.15f, -0.019f, 0.019f) });
+	board_corners.push_back({ Point3f(-0.15f, 0.107f, -0.019f), Point3f(-0.15f, 0.019f, -0.019f), Point3f(-0.15f, 0.019f, -0.107f), Point3f(-0.15f, 0.107f, -0.107f) });
+	board_corners.push_back({ Point3f(-0.15f, -0.019f, -0.019f), Point3f(-0.15f, -0.107f, -0.019f), Point3f(-0.15f, -0.107f, -0.107f),  Point3f(-0.15f, -0.019f, -0.107f) });
+
+	//cv::Ptr<cv::aruco::Board> board = cv::aruco::Board::create(board_corners, cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_50), ids);
+
+	/*
+	Initiale Erstellung des XML Document-Objekts
+	*/
+	//using namespace tinyxml2;
+	//XMLDocument doc;
+	//XMLDeclaration* dec = doc.NewDeclaration();
+	//doc.InsertFirstChild(dec);
+	//XMLElement* camList = doc.NewElement("CameraList");
+
+
+	/*
+	Initialisierung des multiple Realsense Containers
+	*/
+	auto m_realSenseDeviceContainer = new device_container();
+	auto m_context = new rs2::context();
+	
+	
+	// BETTER CAMERA CALIB
+	int seenCheckerImages = 0;
+	cv::Mat cameraMatrix, distCoeffs, R, T;
+	// END BETTER CAMERA CALIB
+	
+	//VideoCapture cap;
+	//if (m_context->query_devices().size() == 0)
+	//{
+	//	std::cout << "Nix drin" << std::endl;
+	//	if (!cap.open(0))
+	//	{
+	//		std::cout << "Klappt net" << std::endl;
+	//	}
+	//	cap.grab();
+
+	//	Mat frame;
+	//	//cap >> frame;
+	//	cap.retrieve(frame);
+	//	//cap.read(frame);
+	//	cv::imwrite("___Test.jpg", frame);
+	//	imshow("this is you, smile! :)", frame);
+	//		
+	//}
+	//else {
+	//	std::cout << "Was drin" << std::endl;
+	//}
+
+	// Initial population of the device list
+	for (auto&& dev : m_context->query_devices()) // Query the list of connected RealSense devices
+	{
+		m_realSenseDeviceContainer->enable_device(dev);
+	}
+	
+	/*Schleife ueber alle Realsenses*/
+	for (auto dev : m_realSenseDeviceContainer->getDevices()) {
+
+		//Auslesen der Metadaten der Kamera
+		std::string serialnumber = dev.first;
+		device_container::view_port vp = dev.second;
+		auto color_stream = vp.profile.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>();
+		auto resolution = std::make_pair(color_stream.width(), color_stream.height());
+		auto i = color_stream.get_intrinsics();
+		rs2_distortion model = i.model;
+		cv::Mat distCoeffs = (cv::Mat_<float>(1, 5) << 0, 0, 0, 0, 0);
+		cv::Mat cameraMatrix = (cv::Mat_<float>(3, 3) << i.fx, 0, i.ppx, 0, i.fy, i.ppy, 0, 0, 1);
+
+		//Fenstername
+		auto window_name = "Camera" + serialnumber;
+
+		//Erstellen des Fensters
+		namedWindow(window_name, WINDOW_AUTOSIZE);
+
+		bool found_cube = false;
+		//Analysieren des Realsense Bildes bis der W?rfel gefunden werden konnte, oder ein Tastendruck den Vorgang abbricht 
+		while (waitKey(1))
+		{
+			//Holen des n?chsten Frames
+			rs2::frameset data = vp.pipe.wait_for_frames(); // Wait for next set of frames from the camera
+			//rs2::frame depth = data.get_depth_frame().apply_filter(color_map);
+			rs2::frame color = data.get_color_frame();
+
+			// Query frame size (width and height)
+			//const int w = depth.as<rs2::video_frame>().get_width();
+			//const int h = depth.as<rs2::video_frame>().get_height();
+
+			const int w = color.as<rs2::video_frame>().get_width();
+			const int h = color.as<rs2::video_frame>().get_height();
+
+			// Create OpenCV matrix of size (w,h) from the colorized depth data
+			Mat image(Size(w, h), CV_8UC3, (void*)color.get_data(), Mat::AUTO_STEP);
+
+			//Aruco Marker detection
+			Mat inputImage;
+			image.copyTo(inputImage);
+			std::vector<int> markerIds;
+			std::vector<std::vector<cv::Point2f>> markerCorners, rejectedCandidates;
+			//cv::Ptr<cv::aruco::DetectorParameters> parameters = cv::aruco::DetectorParameters::create();
+			//cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
+			//cv::aruco::detectMarkers(inputImage, dictionary, markerCorners, markerIds, parameters, rejectedCandidates);
+			//cv::aruco::drawDetectedMarkers(inputImage, markerCorners, markerIds);
+
+
+
+
+
+			// BETTER CAMERA CALIB
+			// Extracting path of individual image stored in a given directory
+			//std::vector<cv::String> images;
+			// Path of the folder containing checkerboard images
+			//std::string path = "./images/*.jpg";
+
+			//cv::glob(path, images);
+			// vector to store the pixel coordinates of detected checker board corners 
+			std::vector<cv::Point2f> corner_pts;
+			bool success;
+
+
+			cv::Mat gray;
+			//frame = cv::imread(images[i]);
+			cv::cvtColor(image, gray, cv::COLOR_RGB2GRAY);
+
+			// Finding checker board corners
+			// If desired number of corners are found in the image then success = true  
+			success = cv::findChessboardCorners(gray, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts, CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE | CALIB_CB_FILTER_QUADS);
+			//success = cv::findChessboardCorners(gray, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts);
+			/*
+			 * If desired number of corner are detected,
+			 * we refine the pixel coordinates and display
+			 * them on the images of checker board
+			*/
+			if (success)
+			{
+				std::cout << "______________________________________________________________" << std::endl;
+				cv::TermCriteria criteria(CV_TERMCRIT_EPS | CV_TERMCRIT_ITER, 30, 0.001);
+
+				// refining pixel coordinates for given 2d points.
+				cv::cornerSubPix(gray, corner_pts, cv::Size(11, 11), cv::Size(-1, -1), criteria);
+
+				// Displaying the detected corner points on the checker board
+				cv::drawChessboardCorners(image, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts, success);
+
+
+
+				objpoints.push_back(objp);
+				imgpoints.push_back(corner_pts);
+				
+				
+				seenCheckerImages++;
+			}
+
+			//cv::imshow("Image", frame);
+			//cv::waitKey(0);
+		
+
+			// Update the window with new data
+			imshow(window_name, image);
+			std::cout << "seenCheckerImages : " << seenCheckerImages << std::endl;
+
+
+			if (seenCheckerImages == 50)
+			{
+				cv::calibrateCamera(objpoints, imgpoints, cv::Size(gray.rows, gray.cols), cameraMatrix, distCoeffs, R, T);
+
+			}
+			if (seenCheckerImages > 50)
+			{
+				int imagesTaken = objpoints.size();
+				cv::solvePnP(objpoints.at(imagesTaken-1), imgpoints.at(imagesTaken - 1), cameraMatrix, distCoeffs, R, T);
+				std::cout << "cameraMatrix : " << cameraMatrix << std::endl;
+				std::cout << "distCoeffs : " << distCoeffs << std::endl;
+				std::cout << "Rotation vector : " << R << std::endl;
+				std::cout << "Translation vector : " << T << std::endl;
+
+				std::cout << "Raus_______________________________" << std::endl;
+				//objpoints.clear();
+				//imgpoints.clear();
+			}
+			waitKeyEx(0);
+		}
+	}
+	//doc.InsertEndChild(camList);
+	//doc.SaveFile("CameraParameters.xml");
+	waitKey(0);
+	return EXIT_SUCCESS;
+}
+catch (const rs2::error& e)
+{
+	std::cerr << "RealSense error calling " << e.get_failed_function() << "(" << e.get_failed_args() << "):\n    " << e.what() << std::endl;
+	return EXIT_FAILURE;
+}
+catch (const std::exception& e)
+{
+	std::cerr << e.what() << std::endl;
+	return EXIT_FAILURE;
+}
