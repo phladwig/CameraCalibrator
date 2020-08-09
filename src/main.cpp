@@ -110,12 +110,9 @@ int g_maxIterationForSubPixel = 25; //default 30 (High Quality, good pattern wit
 int g_epsilonForSubPixel = 0.05; // default 0.01 (High Quality, good pattern with big squares, good camera, takes much time for calculation 
 								 // faster calculation 0.03 )
 
-
-
-
-
 int g_minimumNumberofImagesForCalibration = 3; //default = 50;
 
+bool g_readCameraParamsFileAtStartUp = false;
 
 
 // ################################################################################
@@ -144,8 +141,6 @@ Main Funktion
 */
 int main(int argc, char* argv[])
 {
-
-
 	std::vector<std::string> fn;
 	cv::VideoCapture cap;
 	cv::Mat inputImage;
@@ -192,10 +187,91 @@ int main(int argc, char* argv[])
 	}
 
 	int seenCheckerImages = 0;
-	cv::Mat cameraMatrix, distCoeffs, R, T;
-	//cv::Mat cameraMatrix(4, 4, CV_32FC1);
-	//cameraMatrix.at<double>(0, 0) = 1.0;
-	//cameraMatrix.at<double>(0, 0) = 1.0;
+	cv::Mat R, T;
+	cv::Mat cameraMatrix = cv::Mat(3, 1, CV_64FC1);
+	cv::Mat distCoeffs = cv::Mat(1, 5, CV_64FC1);
+	
+	//Read CameraParameters.xml and set cameraMatrix and DistCoeffs
+	if (g_readCameraParamsFileAtStartUp)
+	{
+		std::vector<double> xmlDataCameraMatrix;
+		std::vector<double> xmlDataDissCoeff;
+		tinyxml2::XMLDocument xmlDoc;
+		tinyxml2::XMLError eResult = xmlDoc.LoadFile("CameraParameters.xml");
+		//tinyxml2::XMLCheckResult(eResult);
+		tinyxml2::XMLNode* pRoot = xmlDoc.FirstChild();
+		if (pRoot == nullptr) return tinyxml2::XML_ERROR_FILE_READ_ERROR;
+		tinyxml2::XMLNode* cameraMatrixNode = pRoot->FirstChildElement("camera_matrix");
+		if (cameraMatrixNode == nullptr) return tinyxml2::XML_ERROR_FILE_READ_ERROR;
+
+		double e00;
+		eResult = cameraMatrixNode->FirstChildElement("e00")->QueryDoubleText(&e00);
+		xmlDataCameraMatrix.push_back(e00);
+		
+		double e01;
+		eResult = cameraMatrixNode->FirstChildElement("e01")->QueryDoubleText(&e01);
+		xmlDataCameraMatrix.push_back(e01);
+
+		double e02;
+		eResult = cameraMatrixNode->FirstChildElement("e02")->QueryDoubleText(&e02);
+		xmlDataCameraMatrix.push_back(e02);
+
+
+		double e10;
+		eResult = cameraMatrixNode->FirstChildElement("e10")->QueryDoubleText(&e10);
+		xmlDataCameraMatrix.push_back(e10);
+
+		double e11;
+		eResult = cameraMatrixNode->FirstChildElement("e11")->QueryDoubleText(&e11);
+		xmlDataCameraMatrix.push_back(e11);
+
+		double e12;
+		eResult = cameraMatrixNode->FirstChildElement("e11")->QueryDoubleText(&e11);
+		xmlDataCameraMatrix.push_back(e11);
+
+
+		double e20;
+		eResult = cameraMatrixNode->FirstChildElement("e20")->QueryDoubleText(&e20);
+		xmlDataCameraMatrix.push_back(e20);
+
+		double e21;
+		eResult = cameraMatrixNode->FirstChildElement("e11")->QueryDoubleText(&e21);
+		xmlDataCameraMatrix.push_back(e21);
+
+		double e22;
+		eResult = cameraMatrixNode->FirstChildElement("e21")->QueryDoubleText(&e21);
+		xmlDataCameraMatrix.push_back(e21);
+
+		memcpy(cameraMatrix.data, xmlDataCameraMatrix.data(), xmlDataCameraMatrix.size() * sizeof(double));
+
+
+		//Distortion Coefficients
+		tinyxml2::XMLNode* distCoeffNode = pRoot->FirstChildElement("dist_coeff");
+		double dC0;
+		eResult = distCoeffNode->FirstChildElement("dC0")->QueryDoubleText(&dC0);
+		xmlDataDissCoeff.push_back(dC0);
+
+		double dC1;
+		eResult = distCoeffNode->FirstChildElement("dC1")->QueryDoubleText(&dC1);
+		xmlDataDissCoeff.push_back(dC1);
+
+		double dC2;
+		eResult = distCoeffNode->FirstChildElement("dC2")->QueryDoubleText(&dC2);
+		xmlDataDissCoeff.push_back(dC2);
+
+		double dC3;
+		eResult = distCoeffNode->FirstChildElement("dC3")->QueryDoubleText(&dC3);
+		xmlDataDissCoeff.push_back(dC3);
+
+		double dC4;
+		eResult = distCoeffNode->FirstChildElement("dC4")->QueryDoubleText(&dC4);
+		xmlDataDissCoeff.push_back(dC4);
+
+			
+		memcpy(distCoeffs.data, xmlDataDissCoeff.data(), xmlDataDissCoeff.size() * sizeof(double));
+	}
+
+
 
 
 	//Main loop
@@ -294,6 +370,7 @@ int main(int argc, char* argv[])
 
 			//Init XML File for saving cam params
 			tinyxml2::XMLDocument doc;
+			tinyxml2::XMLElement* highestNode = doc.NewElement("camera_params");
 			tinyxml2::XMLElement* cameraMatrixNode = doc.NewElement("camera_matrix");
 			{
 				//First row
@@ -336,7 +413,7 @@ int main(int argc, char* argv[])
 				cameraMatrixNode->InsertEndChild(e22);
 
 			}
-			doc.InsertEndChild(cameraMatrixNode);
+			highestNode->InsertEndChild(cameraMatrixNode);
 			tinyxml2::XMLElement* distCoeff = doc.NewElement("dist_coeff");
 			{
 				tinyxml2::XMLElement* dC0 = doc.NewElement("dC0");
@@ -359,7 +436,8 @@ int main(int argc, char* argv[])
 				dC4->SetText(distCoeffs.at<double>(4));
 				distCoeff->InsertEndChild(dC4);
 			}
-			doc.InsertEndChild(distCoeff);
+			highestNode->InsertEndChild(distCoeff);
+			doc.InsertEndChild(highestNode);
 			doc.SaveFile("CameraParameters.xml");
 		}
 
@@ -380,6 +458,17 @@ int main(int argc, char* argv[])
 			undistort(temp, inputImage, cameraMatrix, distCoeffs);
 			imshow("Undistored", inputImage);
 		}
+
+		if (success && g_readCameraParamsFileAtStartUp)
+		{
+			int imagesTaken = objpoints.size();
+			//cv::solvePnP(objpoints.at(imagesTaken - 1), imgpoints.at(imagesTaken - 1), cameraMatrix, distCoeffs, R, T);
+			std::cout << "cameraMatrix : " << cameraMatrix << std::endl;
+			std::cout << "distCoeffs : " << distCoeffs << std::endl;
+			std::cout << "Rotation vector : " << R << std::endl;
+			std::cout << "Translation vector : " << T << std::endl;
+		}
+
 		cv::waitKeyEx(0);
 	}
 	cv::waitKey(0);
