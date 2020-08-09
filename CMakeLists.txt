@@ -71,3 +71,5 @@ FIND_PACKAGE( VideoInput REQUIRED)
 
 # Add subdir with additional CMakeLists.txt and files
 add_subdirectory("${CMAKE_SOURCE_DIR}/src")
+
+set_target_properties(CameraCalibrator PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

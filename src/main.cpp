@@ -2,15 +2,15 @@
 // ###########################    How to use    ###################################
 // ################################################################################
 /*
-Not start up commands necessary.
+No start-up commands necessary.
 When started, it tries to open g_captureDeviceID with g_width and g_height.
 It looks after the given checkerboard pattern CHECKERBOARD with the given square numbers and sizes g_squareSizeInMM.
 Close the shown window "Last seen image" and the app gets the next frame and tries to find the pattern.
 As long as it has not find g_minimumNumberofImagesForCalibration, it will not calibrate.
 As soon as it as g_minimumNumberofImagesForCalibration reached, it tries to calibrate.
 With g_maxIterationForSubPixel = 30 and g_epsilonForSubPixel = 0.01 it takes for
-g_minimumNumberofImagesForCalibration = 50 about 10minutes to calculate in Intel i9. 
-After this, take another photo of the same pattern and you will get the 
+g_minimumNumberofImagesForCalibration = 50 about 10minutes to calculate in Intel i9.
+After this, take another photo of the same pattern and you will get the
 cameraMatrix,
 DistortionParameters
 and Translation and Rotion relative between camera an pattern.
@@ -42,11 +42,12 @@ Happy calibrating :)
 #include <algorithm>
 #include <mutex>                    // std::mutex, std::lock_guard
 #include <cmath>
-//#include "tinyxml2.h"
+#include "tinyxml2.h"
 
 #include <videoInput.h>
 videoInput VI;
 unsigned char* viFrame;
+
 
 
 // ################################################################################
@@ -76,10 +77,10 @@ float squareSizeInMM = 10.0f;
 /*
 	Defining the dimensions of checkerboard (if you count the squares on the chessboard take on less. A pattern with 7 to 10 squares is a 6 to 9
 */
-int CHECKERBOARD[2]{ 6,9 };
+int CHECKERBOARD[2]{ 5,8 };
 
 
-/* 
+/*
 	Set a capture mode:
 	case 0: // Use videoInputLib
 	case 1: // Use OpenCV's VideoCapture (does not run with every camera - for example not with the AV2GO USB Composite Video Grabber
@@ -90,7 +91,7 @@ int CHECKERBOARD[2]{ 6,9 };
 int g_mode = 0;
 
 
-/* 
+/*
 	Set a path to a bunch of files on disk -> used by OpenCV imgread()
 	default is 0
 */
@@ -105,14 +106,15 @@ std::string g_path = "C:/devel/CameraCalibrator/build/bin/CameraID1-weitwinkelMo
 	Have a look at https://docs.opencv.org/2.4/modules/imgproc/doc/feature_detection.html#cornersubpix
 	Default is 30 and 0.01
 */
-int g_maxIterationForSubPixel = 30;
-int g_epsilonForSubPixel = 0.01;
+int g_maxIterationForSubPixel = 25; //default 30 (High Quality, good pattern with big squares, good camera, takes much time for calculation)
+int g_epsilonForSubPixel = 0.05; // default 0.01 (High Quality, good pattern with big squares, good camera, takes much time for calculation 
+								 // faster calculation 0.03 )
 
 
 
 
 
-int g_minimumNumberofImagesForCalibration = 50;
+int g_minimumNumberofImagesForCalibration = 3; //default = 50;
 
 
 
@@ -127,7 +129,7 @@ int g_minimumNumberofImagesForCalibration = 50;
 // ################################################################################
 /*
 	Experimetal State
-	For RealSense implementation in the future, look at the file 
+	For RealSense implementation in the future, look at the file
 	"oldRealSenseCalibratorFromStudentProject.txt"
 
 
@@ -142,6 +144,8 @@ Main Funktion
 */
 int main(int argc, char* argv[])
 {
+
+
 	std::vector<std::string> fn;
 	cv::VideoCapture cap;
 	cv::Mat inputImage;
@@ -189,6 +193,9 @@ int main(int argc, char* argv[])
 
 	int seenCheckerImages = 0;
 	cv::Mat cameraMatrix, distCoeffs, R, T;
+	//cv::Mat cameraMatrix(4, 4, CV_32FC1);
+	//cameraMatrix.at<double>(0, 0) = 1.0;
+	//cameraMatrix.at<double>(0, 0) = 1.0;
 
 
 	//Main loop
@@ -217,7 +224,7 @@ int main(int argc, char* argv[])
 				readFileCounter++;
 			}
 		}
-			break;
+		break;
 		case 3: // Use RealSense Lib (not implemented yet)
 			break;
 		case 4: // Use Azure Kinect Sensor SDK (not implemented yet)
@@ -226,7 +233,7 @@ int main(int argc, char* argv[])
 			break;
 		}
 
-		
+
 		std::vector<int> markerIds;
 		std::vector<std::vector<cv::Point2f>> markerCorners, rejectedCandidates;
 
@@ -238,11 +245,11 @@ int main(int argc, char* argv[])
 
 		// Finding checker board corners
 		// If desired number of corners are found in the image then success = true  
-		success = cv::findChessboardCorners(gray, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts, cv::CALIB_CB_ADAPTIVE_THRESH | 
-																											cv::CALIB_CB_NORMALIZE_IMAGE | 
-																											cv::CALIB_CB_FILTER_QUADS);
+		success = cv::findChessboardCorners(gray, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts, cv::CALIB_CB_ADAPTIVE_THRESH |
+			cv::CALIB_CB_NORMALIZE_IMAGE |
+			cv::CALIB_CB_FILTER_QUADS);
 		//success = cv::findChessboardCorners(gray, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts);
-		
+
 		/*
 		 * If desired number of corner are detected,
 		 * we refine the pixel coordinates and display
@@ -276,6 +283,84 @@ int main(int argc, char* argv[])
 			std::cout << "Vor calibrateCamera()" << std::endl;
 			cv::calibrateCamera(objpoints, imgpoints, cv::Size(gray.rows, gray.cols), cameraMatrix, distCoeffs, R, T);
 			std::cout << "Nach calibrateCamera()" << std::endl;
+			std::cout << "cameraMatrix : " << cameraMatrix << std::endl;
+			std::cout << "distCoeffs : " << distCoeffs << std::endl;
+			std::cout << "Rotation vector : " << R << std::endl;
+			std::cout << "Translation vector : " << T << std::endl;
+			std::cout << "Raus_______________________________" << std::endl;
+
+
+
+
+			//Init XML File for saving cam params
+			tinyxml2::XMLDocument doc;
+			tinyxml2::XMLElement* cameraMatrixNode = doc.NewElement("camera_matrix");
+			{
+				//First row
+				tinyxml2::XMLElement* e00 = doc.NewElement("e00");
+				e00->SetText(cameraMatrix.at<double>(0, 0));
+				cameraMatrixNode->InsertEndChild(e00);
+
+				tinyxml2::XMLElement* e01 = doc.NewElement("e01");
+				e01->SetText(cameraMatrix.at<double>(0, 1));
+				cameraMatrixNode->InsertEndChild(e01);
+
+				tinyxml2::XMLElement* e02 = doc.NewElement("e02");
+				e02->SetText(cameraMatrix.at<double>(0, 2));
+				cameraMatrixNode->InsertEndChild(e02);
+
+				//Second row
+				tinyxml2::XMLElement* e10 = doc.NewElement("e10");
+				e10->SetText(cameraMatrix.at<double>(1, 0));
+				cameraMatrixNode->InsertEndChild(e10);
+
+				tinyxml2::XMLElement* e11 = doc.NewElement("e11");
+				e11->SetText(cameraMatrix.at<double>(1, 1));
+				cameraMatrixNode->InsertEndChild(e11);
+
+				tinyxml2::XMLElement* e12 = doc.NewElement("e12");
+				e12->SetText(cameraMatrix.at<double>(1, 2));
+				cameraMatrixNode->InsertEndChild(e12);
+				
+				//Third row
+				tinyxml2::XMLElement* e20 = doc.NewElement("e20");
+				e20->SetText(cameraMatrix.at<double>(2, 0));
+				cameraMatrixNode->InsertEndChild(e20);
+
+				tinyxml2::XMLElement* e21 = doc.NewElement("e21");
+				e21->SetText(cameraMatrix.at<double>(2, 1));
+				cameraMatrixNode->InsertEndChild(e21);
+
+				tinyxml2::XMLElement* e22 = doc.NewElement("e22");
+				e22->SetText(cameraMatrix.at<double>(2, 2));
+				cameraMatrixNode->InsertEndChild(e22);
+
+			}
+			doc.InsertEndChild(cameraMatrixNode);
+			tinyxml2::XMLElement* distCoeff = doc.NewElement("dist_coeff");
+			{
+				tinyxml2::XMLElement* dC0 = doc.NewElement("dC0");
+				dC0->SetText(distCoeffs.at<double>(0));
+				distCoeff->InsertEndChild(dC0);
+
+				tinyxml2::XMLElement* dC1 = doc.NewElement("dC1");
+				dC1->SetText(distCoeffs.at<double>(1));
+				distCoeff->InsertEndChild(dC1);
+
+				tinyxml2::XMLElement* dC2 = doc.NewElement("dC2");
+				dC2->SetText(distCoeffs.at<double>(2));
+				distCoeff->InsertEndChild(dC2);
+
+				tinyxml2::XMLElement* dC3 = doc.NewElement("dC3");
+				dC3->SetText(distCoeffs.at<double>(3));
+				distCoeff->InsertEndChild(dC3);
+
+				tinyxml2::XMLElement* dC4 = doc.NewElement("dC4");
+				dC4->SetText(distCoeffs.at<double>(4));
+				distCoeff->InsertEndChild(dC4);
+			}
+			doc.InsertEndChild(distCoeff);
+			doc.SaveFile("CameraParameters.xml");
 		}
 
 		if (seenCheckerImages > g_minimumNumberofImagesForCalibration)
