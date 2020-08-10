@@ -106,11 +106,11 @@ std::string g_path = "C:/devel/CameraCalibrator/build/bin/CameraID1-weitwinkelMo
 	Have a look at https://docs.opencv.org/2.4/modules/imgproc/doc/feature_detection.html#cornersubpix
 	Default is 30 and 0.01
 */
-int g_maxIterationForSubPixel = 25; //default 30 (High Quality, good pattern with big squares, good camera, takes much time for calculation)
-int g_epsilonForSubPixel = 0.05; // default 0.01 (High Quality, good pattern with big squares, good camera, takes much time for calculation 
+int g_maxIterationForSubPixel = 30; //default 30 (High Quality, good pattern with big squares, good camera, takes much time for calculation)
+int g_epsilonForSubPixel = 0.015; // default 0.01 (High Quality, good pattern with big squares, good camera, takes much time for calculation 
 								 // faster calculation 0.03 )
 
-int g_minimumNumberofImagesForCalibration = 3; //default = 50;
+int g_minimumNumberofImagesForCalibration = 50; //default = 50;
 
 bool g_readCameraParamsFileAtStartUp = false;
 
@@ -188,8 +188,8 @@ int main(int argc, char* argv[])
 
 	int seenCheckerImages = 0;
 	cv::Mat R, T;
-	cv::Mat cameraMatrix = cv::Mat(3, 1, CV_64FC1);
-	cv::Mat distCoeffs = cv::Mat(1, 5, CV_64FC1);
+	cv::Mat cameraMatrix = cv::Mat(3, 3, CV_64F);
+	cv::Mat distCoeffs = cv::Mat(1, 5, CV_64F);
 	
 	//Read CameraParameters.xml and set cameraMatrix and DistCoeffs
 	if (g_readCameraParamsFileAtStartUp)
@@ -226,8 +226,8 @@ int main(int argc, char* argv[])
 		xmlDataCameraMatrix.push_back(e11);
 
 		double e12;
-		eResult = cameraMatrixNode->FirstChildElement("e11")->QueryDoubleText(&e11);
-		xmlDataCameraMatrix.push_back(e11);
+		eResult = cameraMatrixNode->FirstChildElement("e12")->QueryDoubleText(&e12);
+		xmlDataCameraMatrix.push_back(e12);
 
 
 		double e20;
@@ -235,14 +235,23 @@ int main(int argc, char* argv[])
 		xmlDataCameraMatrix.push_back(e20);
 
 		double e21;
-		eResult = cameraMatrixNode->FirstChildElement("e11")->QueryDoubleText(&e21);
-		xmlDataCameraMatrix.push_back(e21);
-
-		double e22;
 		eResult = cameraMatrixNode->FirstChildElement("e21")->QueryDoubleText(&e21);
 		xmlDataCameraMatrix.push_back(e21);
 
-		memcpy(cameraMatrix.data, xmlDataCameraMatrix.data(), xmlDataCameraMatrix.size() * sizeof(double));
+		double e22;
+		eResult = cameraMatrixNode->FirstChildElement("e22")->QueryDoubleText(&e22);
+		xmlDataCameraMatrix.push_back(e22);
+		cameraMatrix.at<double>(0, 0) = e00;
+		cameraMatrix.at<double>(0, 1) = e01;
+		cameraMatrix.at<double>(0, 2) = e02;
+		cameraMatrix.at<double>(1, 0) = e10;
+		cameraMatrix.at<double>(1, 1) = e11;
+		cameraMatrix.at<double>(1, 2) = e12;
+		cameraMatrix.at<double>(2, 0) = e20;
+		cameraMatrix.at<double>(2, 1) = e21;
+		cameraMatrix.at<double>(2, 2) = e22;
+
+		//memcpy(cameraMatrix.data, xmlDataCameraMatrix.data(), xmlDataCameraMatrix.size() * sizeof(double));
 
 
 		//Distortion Coefficients
@@ -354,10 +363,12 @@ int main(int argc, char* argv[])
 		std::cout << "seenCheckerImages : " << seenCheckerImages << std::endl;
 
 		//Calibration
-		if (seenCheckerImages == g_minimumNumberofImagesForCalibration)
+		if (success && seenCheckerImages == g_minimumNumberofImagesForCalibration)
 		{
 			std::cout << "Vor calibrateCamera()" << std::endl;
 			cv::calibrateCamera(objpoints, imgpoints, cv::Size(gray.rows, gray.cols), cameraMatrix, distCoeffs, R, T);
+			//Does not work -> It wil crashes
+			//cv::fisheye::calibrate(objpoints, imgpoints, cv::Size(gray.rows, gray.cols), cameraMatrix, distCoeffs, R, T);
 			std::cout << "Nach calibrateCamera()" << std::endl;
 			std::cout << "cameraMatrix : " << cameraMatrix << std::endl;
 			std::cout << "distCoeffs : " << distCoeffs << std::endl;
@@ -441,7 +452,7 @@ int main(int argc, char* argv[])
 			doc.SaveFile("CameraParameters.xml");
 		}
 
-		if (seenCheckerImages > g_minimumNumberofImagesForCalibration)
+		if (success && seenCheckerImages > g_minimumNumberofImagesForCalibration)
 		{
 			std::cout << "Vor solvePnP()" << std::endl;
 			int imagesTaken = objpoints.size();
@@ -462,7 +473,7 @@ int main(int argc, char* argv[])
 		if (success && g_readCameraParamsFileAtStartUp)
 		{
 			int imagesTaken = objpoints.size();
-			//cv::solvePnP(objpoints.at(imagesTaken - 1), imgpoints.at(imagesTaken - 1), cameraMatrix, distCoeffs, R, T);
+			cv::solvePnP(objpoints.at(imagesTaken - 1), imgpoints.at(imagesTaken - 1), cameraMatrix, distCoeffs, R, T);
 			std::cout << "cameraMatrix : " << cameraMatrix << std::endl;
 			std::cout << "distCoeffs : " << distCoeffs << std::endl;
 			std::cout << "Rotation vector : " << R << std::endl;
