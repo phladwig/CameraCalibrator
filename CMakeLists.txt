@@ -69,6 +69,19 @@ getsTheDepsNameFromURL("${URL}")
 set(CHECK_IF_DEPS_EXIST "${CURRENT_DEPS_PATH}/include/videoInput.h")
 FIND_PACKAGE( VideoInput REQUIRED)
 
+# REAL SENSE SDK
+set(EXPECTED_SHA256 7d80f3d8633c9dd19a49ab840cabeda223ebc1e6b7011645aab3d35ea2a08aa3 )
+set(CURRENT_DEPS_PATH ${CMAKE_BINARY_DIR}/../deps/realsense-2.34.0/)
+set(URL https://claymore.mirevi.com/realsense-2.34.0.zip)
+getsTheDepsNameFromURL("${URL}")
+set(CHECK_IF_DEPS_EXIST "${CURRENT_DEPS_PATH}/include/h/rs_types.h")
+FIND_PACKAGE( RealSense REQUIRED )
+file(COPY ${CURRENT_DEPS_PATH}/bin/realsense2.dll DESTINATION ${CMAKE_BINARY_DIR}/bin)
+file(COPY ${CURRENT_DEPS_PATH}/bin/realsense2d.dll DESTINATION ${CMAKE_BINARY_DIR}/bin)
+file(COPY ${CURRENT_DEPS_PATH}/bin/Intel.RealSense.Viewer.exe DESTINATION ${CMAKE_BINARY_DIR}/bin)
+file(COPY ${CURRENT_DEPS_PATH}/bin/Depth.Quality.Tool.exe DESTINATION ${CMAKE_BINARY_DIR}/bin)
+# How-to-pack: Quite simple - nothing special.
+
 # Add subdir with additional CMakeLists.txt and files
 add_subdirectory("${CMAKE_SOURCE_DIR}/src")
 

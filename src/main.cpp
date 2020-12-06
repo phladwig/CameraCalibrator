@@ -5,7 +5,11 @@
 No start-up commands necessary.
 When started, it tries to open g_captureDeviceID with g_width and g_height.
 It looks after the given checkerboard pattern CHECKERBOARD with the given square numbers and sizes g_squareSizeInMM.
-Close the shown window "Last seen image" and the app gets the next frame and tries to find the pattern.
+A window 'Last seen image' will open and display the most recent image captured.
+If the checkerboard corners were found, they are visible in the image aswell.
+Check the quality of the match by comparing the distance between the drawn corners and the real ones.
+In case the result was not good enough, it can be discarded by hitting the 'x'-key.
+Otherwise hit any other button or close the shown window "Last seen image" and the app gets the next frame and tries to find the pattern again.
 As long as it has not find g_minimumNumberofImagesForCalibration, it will not calibrate.
 As soon as it as g_minimumNumberofImagesForCalibration reached, it tries to calibrate.
 With g_maxIterationForSubPixel = 30 and g_epsilonForSubPixel = 0.01 it takes for
@@ -13,7 +17,8 @@ g_minimumNumberofImagesForCalibration = 50 about 10minutes to calculate in Intel
 After this, take another photo of the same pattern and you will get the
 cameraMatrix,
 DistortionParameters
-and Translation and Rotion relative between camera an pattern.
+and Translation and Rotation relative between camera and pattern.
+At this stage the coordinate axes of the pattern can be drawn to an image by hitting the 'a'-key while the window 'Last seen image' is active. To proceed any key has to be pressed.
 
 Usually g_mode = 0 should do fine, but check the section "Variables to set" if not below.
 
@@ -33,6 +38,8 @@ Happy calibrating :)
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
+#include <rs.hpp>
+
 //using namespace cv;
 #include <stdio.h>
 
@@ -48,8 +55,6 @@ Happy calibrating :)
 videoInput VI;
 unsigned char* viFrame;
 
-
-
 // ################################################################################
 // ########################### Variables to set ###################################
 // ################################################################################
@@ -57,8 +62,8 @@ unsigned char* viFrame;
 	Width and height of the capture size
 	Does not work for OpenCV
 */
-int g_width = 640;
-int g_height = 480;
+int g_width = 1920;
+int g_height = 1080;
 
 
 /*
@@ -71,13 +76,13 @@ int g_captureDeviceID = 0;
 /*
 	Set the size of the squares on the chessboard pattern
 */
-float squareSizeInMM = 10.0f;
+float squareSizeInMM = 28.f;
 
 
 /*
 	Defining the dimensions of checkerboard (if you count the squares on the chessboard take on less. A pattern with 7 to 10 squares is a 6 to 9
 */
-int CHECKERBOARD[2]{ 5,8 };
+int CHECKERBOARD[2]{ 6,9 };
 
 
 /*
@@ -144,6 +149,8 @@ int main(int argc, char* argv[])
 	std::vector<std::string> fn;
 	cv::VideoCapture cap;
 	cv::Mat inputImage;
+	rs2::context rs2ctx;
+	rs2::pipeline rsPipe(rs2ctx);
 	switch (g_mode) {
 	case 0: // Use videoInputLib
 		VI.setUseCallback(true);
@@ -164,6 +171,19 @@ int main(int argc, char* argv[])
 		cv::glob(g_path, fn, false);
 		break;
 	case 3: // Use RealSense Lib (not implemented yet)
+	{
+		unsigned int i = 0;
+		for (rs2::device&& device : rs2ctx.query_devices()) {
+			if (i != g_captureDeviceID) continue;
+			const char* serial = device.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER);
+			rs2::config rs2cfg;
+			rs2cfg.enable_stream(RS2_STREAM_COLOR, -1, g_width, g_height, rs2_format::RS2_FORMAT_BGR8, 30);
+			rs2cfg.enable_device(serial);
+			rsPipe.start(rs2cfg);
+			std::cout << "RealSense Device: " << serial << " started." << std::endl;
+			break;
+		}
+	}
 		break;
 	case 4: // Use Azure Kinect Sensor SDK (not implemented yet)
 		break;
@@ -284,7 +304,7 @@ int main(int argc, char* argv[])
 
 
 	//Main loop
-	while (cv::waitKey(1))
+	while (true)//cv::waitKey(1))
 	{
 		switch (g_mode) {
 		case 0: // Use videoInputLib
@@ -311,6 +331,11 @@ int main(int argc, char* argv[])
 		}
 		break;
 		case 3: // Use RealSense Lib (not implemented yet)
+		{
+			rs2::frameset frames = rsPipe.wait_for_frames();
+			rs2::video_frame colorFrame = frames.get_color_frame();
+			inputImage = cv::Mat(cv::Size(g_width, g_height), CV_8UC3, (void*) colorFrame.get_data(), cv::Mat::AUTO_STEP);
+		}
 			break;
 		case 4: // Use Azure Kinect Sensor SDK (not implemented yet)
 			break;
@@ -340,6 +365,7 @@ int main(int argc, char* argv[])
 		 * we refine the pixel coordinates and display
 		 * them on the images of checker board
 		*/
+		cv::Mat inputImageBackup = inputImage.clone();
 		if (success)
 		{
 			std::cout << "Saw chessboard pattern - processing" << std::endl;
@@ -350,16 +376,23 @@ int main(int argc, char* argv[])
 
 			// Displaying the detected corner points on the checker board
 			cv::drawChessboardCorners(inputImage, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts, success);
+		}
 
+		// Update the window with new data
+		imshow("Last seen image", inputImage);
+		char key = cv::waitKey();
+		if (key == 'x') {
+			std::cout << "Image skipped" << std::endl;
+			continue;
+		}
+
+		if (success) {
 			objpoints.push_back(objp);
 			imgpoints.push_back(corner_pts);
 
 			seenCheckerImages++;
 		}
 
-
-		// Update the window with new data
-		imshow("Last seen image", inputImage);
 		std::cout << "seenCheckerImages : " << seenCheckerImages << std::endl;
 
 		//Calibration
@@ -456,7 +489,8 @@ int main(int argc, char* argv[])
 		{
 			std::cout << "Vor solvePnP()" << std::endl;
 			int imagesTaken = objpoints.size();
-			cv::solvePnP(objpoints.at(imagesTaken - 1), imgpoints.at(imagesTaken - 1), cameraMatrix, distCoeffs, R, T);
+			cv::solvePnPRansac(objpoints.at(imagesTaken - 1), imgpoints.at(imagesTaken - 1), cameraMatrix, distCoeffs, R, T);
+			//cv::solvePnP(objpoints.at(imagesTaken - 1), imgpoints.at(imagesTaken - 1), cameraMatrix, distCoeffs, R, T);
 			std::cout << "cameraMatrix : " << cameraMatrix << std::endl;
 			std::cout << "distCoeffs : " << distCoeffs << std::endl;
 			std::cout << "Rotation vector : " << R << std::endl;
@@ -465,9 +499,17 @@ int main(int argc, char* argv[])
 			//objpoints.clear();
 			//imgpoints.clear();
 			//Mat temp = inputImage.clone();
-			cv::Mat temp = inputImage.clone();
-			undistort(temp, inputImage, cameraMatrix, distCoeffs);
-			imshow("Undistored", inputImage);
+			//cv::Mat temp = inputImage.clone();
+			//undistort(temp, inputImage, cameraMatrix, distCoeffs);
+			cv::Mat undistortedImage;
+			undistort(inputImage, undistortedImage, cameraMatrix, distCoeffs);
+			imshow("Undistored", undistortedImage);
+			if (key == 'a') {
+				cv::drawFrameAxes(inputImageBackup, cameraMatrix, distCoeffs, R, T, 100.f);
+				std::cout << "DrawFrameAxis: press key to continue" << std::endl;
+				imshow("Last seen image", inputImageBackup);
+				cv::waitKey();
+			}
 		}
 
 		if (success && g_readCameraParamsFileAtStartUp)
@@ -480,8 +522,9 @@ int main(int argc, char* argv[])
 			std::cout << "Translation vector : " << T << std::endl;
 		}
 
-		cv::waitKeyEx(0);
+		//cv::waitKeyEx(0);
 	}
+	rsPipe.stop();
 	cv::waitKey(0);
 	return EXIT_SUCCESS;
 }
