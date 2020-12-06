@@ -90,7 +90,7 @@ int CHECKERBOARD[2]{ 6,9 };
 	case 0: // Use videoInputLib
 	case 1: // Use OpenCV's VideoCapture (does not run with every camera - for example not with the AV2GO USB Composite Video Grabber
 	case 2: // Use OpenCV's imread() function in order to load a bunch of images from disk
-	case 3: // Use RealSense Lib (not implemented yet)
+	case 3: // Use RealSense Lib
 	case 4: // Use Azure Kinect Sensor SDK (not implemented yet)
 */
 int g_mode = 0;
