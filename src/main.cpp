@@ -13,14 +13,14 @@ Otherwise hit any other button or close the shown window "Last seen image" and t
 As long as it has not find g_minimumNumberofImagesForCalibration, it will not calibrate.
 As soon as it as g_minimumNumberofImagesForCalibration reached, it tries to calibrate.
 With g_maxIterationForSubPixel = 30 and g_epsilonForSubPixel = 0.01 it takes for
-g_minimumNumberofImagesForCalibration = 50 about 10minutes to calculate in Intel i9.
-After this, take another photo of the same pattern and you will get the
+g_minimumNumberofImagesForCalibration = 50 about 10minutes to calculate with an Intel i9-9880H.
+After the calibration, take another image of the same pattern and you will get the
 cameraMatrix,
 DistortionParameters
-and Translation and Rotation relative between camera and pattern.
+and Translation and Rotation relative between camera and pattern (in console).
 At this stage the coordinate axes of the pattern can be drawn to an image by hitting the 'a'-key while the window 'Last seen image' is active. To proceed any key has to be pressed.
 
-Usually g_mode = 0 should do fine, but check the section "Variables to set" if not below.
+Usually g_mode = 0 should do fine, but check the section below "Variables to set" if not.
 
 Happy calibrating :)
 
@@ -76,13 +76,13 @@ int g_captureDeviceID = 0;
 /*
 	Set the size of the squares on the chessboard pattern
 */
-float squareSizeInMM = 28.f;
+float squareSizeInMM = 35.7f;
 
 
 /*
 	Defining the dimensions of checkerboard (if you count the squares on the chessboard take on less. A pattern with 7 to 10 squares is a 6 to 9
 */
-int CHECKERBOARD[2]{ 6,9 };
+int CHECKERBOARD[2]{ 7,10 };
 
 
 /*
@@ -93,14 +93,14 @@ int CHECKERBOARD[2]{ 6,9 };
 	case 3: // Use RealSense Lib
 	case 4: // Use Azure Kinect Sensor SDK (not implemented yet)
 */
-int g_mode = 0;
+int g_mode = 3;
 
 
 /*
 	Set a path to a bunch of files on disk -> used by OpenCV imgread()
 	default is 0
 */
-std::string g_path = "C:/devel/CameraCalibrator/build/bin/CameraID1-weitwinkelMouthCam/*.jpg";
+std::string g_calibrationImagePath = "C:/devel/CameraCalibrator/build/bin/CameraID1-weitwinkelMouthCam/*.jpg";
 
 
 /*
@@ -111,8 +111,8 @@ std::string g_path = "C:/devel/CameraCalibrator/build/bin/CameraID1-weitwinkelMo
 	Have a look at https://docs.opencv.org/2.4/modules/imgproc/doc/feature_detection.html#cornersubpix
 	Default is 30 and 0.01
 */
-int g_maxIterationForSubPixel = 30; //default 30 (High Quality, good pattern with big squares, good camera, takes much time for calculation)
-int g_epsilonForSubPixel = 0.015; // default 0.01 (High Quality, good pattern with big squares, good camera, takes much time for calculation 
+int g_maxIterationForSubPixel = 20; //default 30 (High Quality, good pattern with big squares, good camera, takes much time for calculation)
+int g_epsilonForSubPixel = 0.025; // default 0.01 (High Quality, good pattern with big squares, good camera, takes much time for calculation 
 								 // faster calculation 0.03 )
 
 int g_minimumNumberofImagesForCalibration = 50; //default = 50;
@@ -133,8 +133,6 @@ bool g_readCameraParamsFileAtStartUp = false;
 	Experimetal State
 	For RealSense implementation in the future, look at the file
 	"oldRealSenseCalibratorFromStudentProject.txt"
-
-
 */
 // ################################################################################
 // ################################################################################
@@ -168,7 +166,7 @@ int main(int argc, char* argv[])
 		cap.set(cv::CAP_PROP_FRAME_HEIGHT, g_height);
 		break;
 	case 2: // Use OpenCV's imread() function in order to load a bunch of images from disk
-		cv::glob(g_path, fn, false);
+		cv::glob(g_calibrationImagePath, fn, false);
 		break;
 	case 3: // Use RealSense Lib (not implemented yet)
 	{
@@ -330,7 +328,7 @@ int main(int argc, char* argv[])
 			}
 		}
 		break;
-		case 3: // Use RealSense Lib (not implemented yet)
+		case 3: // Use RealSense Lib
 		{
 			rs2::frameset frames = rsPipe.wait_for_frames();
 			rs2::video_frame colorFrame = frames.get_color_frame();
