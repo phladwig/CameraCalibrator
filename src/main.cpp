@@ -81,6 +81,9 @@ float squareSizeInMM = 35.7f;
 
 /*
 	Defining the dimensions of checkerboard (if you count the squares on the chessboard take on less. A pattern with 7 to 10 squares is a 6 to 9
+	Be aware of the position and rotation of the resulting origin of the checkerboard pattern. A switch from e.g. 7x10 to 10x7 results in a 
+	different pos/rot. Also a switch from e.g. 7x10 to 6x9 results in a different pos/rot. Therefore, further processing, such as position estimation, 
+	must be performed with the same pattern	that was used for calibration.
 */
 int CHECKERBOARD[2]{ 7,10 };
 
