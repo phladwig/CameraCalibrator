@@ -37,6 +37,7 @@ Happy calibrating :)
 #include <opencv2/calib3d/calib3d.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/aruco/charuco.hpp>
 
 #include <rs.hpp>
 
@@ -81,8 +82,8 @@ float squareSizeInMM = 35.7f;
 
 /*
 	Defining the dimensions of checkerboard (if you count the squares on the chessboard take on less. A pattern with 7 to 10 squares is a 6 to 9
-	Be aware of the position and rotation of the resulting origin of the checkerboard pattern. A switch from e.g. 7x10 to 10x7 results in a 
-	different pos/rot. Also a switch from e.g. 7x10 to 6x9 results in a different pos/rot. Therefore, further processing, such as position estimation, 
+	Be aware of the position and rotation of the resulting origin of the checkerboard pattern. A switch from e.g. 7x10 to 10x7 results in a
+	different pos/rot. Also a switch from e.g. 7x10 to 6x9 results in a different pos/rot. Therefore, further processing, such as position estimation,
 	must be performed with the same pattern	that was used for calibration.
 */
 int CHECKERBOARD[2]{ 7,10 };
@@ -122,6 +123,7 @@ int g_minimumNumberofImagesForCalibration = 50; //default = 50;
 
 bool g_readCameraParamsFileAtStartUp = false;
 
+bool g_useAruco = false;
 
 // ################################################################################
 // ################################################################################
@@ -185,7 +187,7 @@ int main(int argc, char* argv[])
 			break;
 		}
 	}
-		break;
+	break;
 	case 4: // Use Azure Kinect Sensor SDK (not implemented yet)
 		break;
 	default:
@@ -211,7 +213,7 @@ int main(int argc, char* argv[])
 	cv::Mat R, T;
 	cv::Mat cameraMatrix = cv::Mat(3, 3, CV_64F);
 	cv::Mat distCoeffs = cv::Mat(1, 5, CV_64F);
-	
+
 	//Read CameraParameters.xml and set cameraMatrix and DistCoeffs
 	if (g_readCameraParamsFileAtStartUp)
 	{
@@ -228,7 +230,7 @@ int main(int argc, char* argv[])
 		double e00;
 		eResult = cameraMatrixNode->FirstChildElement("e00")->QueryDoubleText(&e00);
 		xmlDataCameraMatrix.push_back(e00);
-		
+
 		double e01;
 		eResult = cameraMatrixNode->FirstChildElement("e01")->QueryDoubleText(&e01);
 		xmlDataCameraMatrix.push_back(e01);
@@ -297,12 +299,15 @@ int main(int argc, char* argv[])
 		eResult = distCoeffNode->FirstChildElement("dC4")->QueryDoubleText(&dC4);
 		xmlDataDissCoeff.push_back(dC4);
 
-			
+
 		memcpy(distCoeffs.data, xmlDataDissCoeff.data(), xmlDataDissCoeff.size() * sizeof(double));
 	}
 
 
-
+	//Charuco preperation
+	cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
+	cv::Ptr<cv::aruco::CharucoBoard> board = cv::aruco::CharucoBoard::create(5, 7, 0.037f, 0.02781f, dictionary);
+	cv::Ptr<cv::aruco::DetectorParameters> params = cv::aruco::DetectorParameters::create();
 
 	//Main loop
 	while (true)//cv::waitKey(1))
@@ -335,9 +340,9 @@ int main(int argc, char* argv[])
 		{
 			rs2::frameset frames = rsPipe.wait_for_frames();
 			rs2::video_frame colorFrame = frames.get_color_frame();
-			inputImage = cv::Mat(cv::Size(g_width, g_height), CV_8UC3, (void*) colorFrame.get_data(), cv::Mat::AUTO_STEP);
+			inputImage = cv::Mat(cv::Size(g_width, g_height), CV_8UC3, (void*)colorFrame.get_data(), cv::Mat::AUTO_STEP);
 		}
-			break;
+		break;
 		case 4: // Use Azure Kinect Sensor SDK (not implemented yet)
 			break;
 		default:
@@ -353,32 +358,74 @@ int main(int argc, char* argv[])
 
 		cv::Mat gray;
 		cv::cvtColor(inputImage, gray, cv::COLOR_RGB2GRAY);
+		cv::Mat inputImageBackup = inputImage.clone(); //is the same as one line below with grayCopy. This line is my old code and below is new aruco code
+		cv::Mat grayCopy;
+		gray.copyTo(grayCopy);
 
-		// Finding checker board corners
-		// If desired number of corners are found in the image then success = true  
-		success = cv::findChessboardCorners(gray, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts, cv::CALIB_CB_ADAPTIVE_THRESH |
-			cv::CALIB_CB_NORMALIZE_IMAGE |
-			cv::CALIB_CB_FILTER_QUADS);
-		//success = cv::findChessboardCorners(gray, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts);
-
-		/*
-		 * If desired number of corner are detected,
-		 * we refine the pixel coordinates and display
-		 * them on the images of checker board
-		*/
-		cv::Mat inputImageBackup = inputImage.clone();
-		if (success)
+		if (g_useAruco)
 		{
-			std::cout << "Saw chessboard pattern - processing" << std::endl;
-			cv::TermCriteria criteria(CV_TERMCRIT_EPS | CV_TERMCRIT_ITER, g_maxIterationForSubPixel, g_epsilonForSubPixel);
-
-			// refining pixel coordinates for given 2d points.
-			cv::cornerSubPix(gray, corner_pts, cv::Size(11, 11), cv::Size(-1, -1), criteria);
-
-			// Displaying the detected corner points on the checker board
-			cv::drawChessboardCorners(inputImage, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts, success);
+			cv::aruco::detectMarkers(gray, board->dictionary, markerCorners, markerIds, params);
+		}
+		else {
+			// Finding checker board corners
+			// If desired number of corners are found in the image then success = true  
+			success = cv::findChessboardCorners(gray, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts, cv::CALIB_CB_ADAPTIVE_THRESH |
+				cv::CALIB_CB_NORMALIZE_IMAGE |
+				cv::CALIB_CB_FILTER_QUADS);
+			//success = cv::findChessboardCorners(gray, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts);
 		}
 
+
+		if (g_useAruco)
+		{
+			if (markerIds.size() > 0) {
+				cv::aruco::drawDetectedMarkers(grayCopy, markerCorners, markerIds);
+				//! [charidcor]
+				std::vector<cv::Point2f> charucoCorners;
+				std::vector<int> charucoIds;
+				cv::aruco::interpolateCornersCharuco(markerCorners, markerIds, gray, board, charucoCorners, charucoIds, cameraMatrix, distCoeffs);
+				//! [charidcor]
+				// if at least one charuco corner detected
+				if (charucoIds.size() > 0) {
+					cv::Scalar color = cv::Scalar(255, 0, 0);
+					//! [detcor]
+					cv::aruco::drawDetectedCornersCharuco(grayCopy, charucoCorners, charucoIds, color);
+					//! [detcor]
+					cv::Vec3d rvec, tvec;
+					//! [pose]
+					// cv::aruco::estimatePoseCharucoBoard(charucoCorners, charucoIds, board, cameraMatrix, distCoeffs, rvec, tvec);
+					//! [pose]
+					bool valid = cv::aruco::estimatePoseCharucoBoard(charucoCorners, charucoIds, board, cameraMatrix, distCoeffs, rvec, tvec);
+					// if charuco pose is valid
+					if (valid)
+						cv::aruco::drawAxis(grayCopy, cameraMatrix, distCoeffs, rvec, tvec, 0.1f);
+				}
+			}
+			cv::imshow("out", grayCopy);
+			char key = (char)cv::waitKey(30);
+			if (key == 27)
+				break;
+		}
+		else
+		{
+
+			/*
+			 * If desired number of corner are detected,
+			 * we refine the pixel coordinates and display
+			 * them on the images of checker board
+			*/
+			if (success)
+			{
+				std::cout << "Saw chessboard pattern - processing" << std::endl;
+				cv::TermCriteria criteria(CV_TERMCRIT_EPS | CV_TERMCRIT_ITER, g_maxIterationForSubPixel, g_epsilonForSubPixel);
+
+				// refining pixel coordinates for given 2d points.
+				cv::cornerSubPix(gray, corner_pts, cv::Size(11, 11), cv::Size(-1, -1), criteria);
+
+				// Displaying the detected corner points on the checker board
+				cv::drawChessboardCorners(inputImage, cv::Size(CHECKERBOARD[0], CHECKERBOARD[1]), corner_pts, success);
+			}
+		}
 		// Update the window with new data
 		imshow("Last seen image", inputImage);
 		char key = cv::waitKey();
@@ -443,7 +490,7 @@ int main(int argc, char* argv[])
 				tinyxml2::XMLElement* e12 = doc.NewElement("e12");
 				e12->SetText(cameraMatrix.at<double>(1, 2));
 				cameraMatrixNode->InsertEndChild(e12);
-				
+
 				//Third row
 				tinyxml2::XMLElement* e20 = doc.NewElement("e20");
 				e20->SetText(cameraMatrix.at<double>(2, 0));

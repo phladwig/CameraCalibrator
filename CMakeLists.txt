@@ -52,14 +52,14 @@ function(getsTheDepsNameFromURL "${URL}")
 endfunction(getsTheDepsNameFromURL)
 
 # OpenCV
-set(EXPECTED_SHA256 bdc8e47b9de55f04a8bec30fb51fd38f990b875ab8d000954bad8a14e3fe4f7c )
-set(CURRENT_DEPS_PATH ${CMAKE_BINARY_DIR}/../deps/opencv-4.20/)
-set(URL https://claymore.mirevi.com/opencv-4.20.zip)
+set(EXPECTED_SHA256 a1436f8eb297c54344dd33d6e6c0a3f26e55f8c089c8f4c5dd983c0fe0c4d440 )
+set(CURRENT_DEPS_PATH ${CMAKE_BINARY_DIR}/../deps/opencv-with-contrib-4.51/)
+set(URL https://claymore.mirevi.com/opencv-with-contrib-4.51.zip)
 getsTheDepsNameFromURL("${URL}")
 set(CHECK_IF_DEPS_EXIST "${CURRENT_DEPS_PATH}/include/opencv2/core.hpp")
 FIND_PACKAGE( OpenCVCameraCalibrator REQUIRED)
-file(COPY ${CURRENT_DEPS_PATH}/x64/vc15/bin/opencv_world420.dll DESTINATION ${CMAKE_BINARY_DIR}/bin)
-file(COPY ${CURRENT_DEPS_PATH}/x64/vc15/bin/opencv_world420d.dll DESTINATION ${CMAKE_BINARY_DIR}/bin)
+file(COPY ${CURRENT_DEPS_PATH}x64/vc16/bin/opencv_world451.dll DESTINATION ${CMAKE_BINARY_DIR}/bin)
+file(COPY ${CURRENT_DEPS_PATH}x64/vc16/bin/opencv_world451d.dll DESTINATION ${CMAKE_BINARY_DIR}/bin)
 
 #VideoInput Lib
 set(EXPECTED_SHA256 18ac560fe2126586db57eab6b27a03a421b55c02b39033328ea1804536af40e8 )
